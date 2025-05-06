@@ -5,38 +5,23 @@ import fetch from 'node-fetch'
 
 let credentials;
 
-// Lógica segura para cargar credenciales desde variable de entorno o archivo
+// --- Lógica para cargar credenciales SOLAMENTE desde GOOGLE_CREDENTIALS_JSON ---
+// Este bloque asume que SIEMPRE usarás la variable GOOGLE_CREDENTIALS_JSON
 if (process.env.GOOGLE_CREDENTIALS_JSON) {
     try {
+        // Parsear el contenido del JSON desde la variable de entorno
         credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-        console.log("Credenciales de Google cargadas desde variable de entorno.");
+        console.log("Credenciales de Google cargadas desde variable de entorno GOOGLE_CREDENTIALS_JSON.");
     } catch (error) {
-        console.error("Error al parsear GOOGLE_CREDENTIALS_JSON. Asegúrate de que es JSON válido:", error.message);
-        // IMPORTANTE: Salir del proceso si las credenciales no se pueden cargar
-        process.exit(1);
-    }
-} else if (process.env.GOOGLE_CREDENTIALS_PATH) {
-     try {
-        // path.resolve(process.cwd(), ...) asegura que la ruta relativa funciona correctamente
-        credentials = require(path.resolve(process.cwd(), process.env.GOOGLE_CREDENTIALS_PATH));
-         console.log(`Credenciales de Google cargadas desde archivo: ${process.env.GOOGLE_CREDENTIALS_PATH}`);
-    } catch (error) {
-        console.error(`Error al cargar archivo de credenciales desde ${process.env.GOOGLE_CREDENTIALS_PATH}:`, error.message);
-        console.error("Asegúrate de que la ruta en .env y el archivo JSON son correctos.");
-         // IMPORTANTE: Salir del proceso si las credenciales no se pueden cargar
+        console.error("Error CRÍTICO: Error al parsear la variable de entorno GOOGLE_CREDENTIALS_JSON. Asegúrate de que su valor es un JSON válido.", error);
+        // Salir del proceso si las credenciales no se pueden parsear
         process.exit(1);
     }
 } else {
-    console.error("Error: No se encontraron credenciales de Google. Configura GOOGLE_CREDENTIALS_JSON o GOOGLE_CREDENTIALS_PATH en .env.");
-     // IMPORTANTE: Salir del proceso si faltan las variables
+    // Si la variable GOOGLE_CREDENTIALS_JSON no está configurada
+    console.error("Error CRÍTICO: La variable de entorno GOOGLE_CREDENTIALS_JSON no está configurada.");
+     // Salir del proceso si la variable principal no está
     process.exit(1);
-}
-
-// Asegurarse de que se cargaron las credenciales antes de continuar
-// Esta verificación adicional es buena práctica, aunque los exit(1) anteriores deberían ser suficientes si las variables existen.
-if (!credentials) {
-     console.error("Error grave: Las credenciales de Google no pudieron ser cargadas.");
-     process.exit(1);
 }
 
 console.log('Valor de la variable credentials antes de GoogleAuth:', credentials);
