@@ -3,7 +3,7 @@ import { google } from 'googleapis';
 import path from 'path';
 import fetch from 'node-fetch'
 
-
+console.log('Valor de la variable credentials antes de GoogleAuth:', credentials);
 const auth = new google.auth.GoogleAuth({
     credentials,
     // ASEGÚRATE DE INCLUIR AMBOS SCOPES
