@@ -195,9 +195,9 @@ client.on('interactionCreate', async interaction => {
              const caso = interaction.fields.getTextInputValue('casoInput');
              const email = interaction.fields.getTextInputValue('emailInput');
              // Recuperamos también la descripción si está en el modal
-             const descripcion = interaction.fields.getTextInputValue('descripcionInput');
+             const observaciones = interaction.fields.getTextInputValue('observacionesInput');
 
-             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
+             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${observaciones}`);
 
 
              // !!! RECUPERAR ARCHIVOS ADJUNTOS PENDIENTES USANDO user.id COMO CLAVE !!!
@@ -231,7 +231,7 @@ client.on('interactionCreate', async interaction => {
                  fechaHoraFormateada, // Fecha/Hora del sistema
                  `#${caso}`,          // Datos del modal (con # añadido si lo deseas)
                  email,               // Datos del modal
-                 descripcion          // Datos del modal
+                 observaciones          // Datos del modal
                  // Si tu hoja solo tiene 4 columnas, omite la descripción aquí
              ];
 
@@ -394,9 +394,9 @@ function buildSolicitudModal() {
         .setRequired(true);
 
     // Campo para Descripción (Agregado según requerimiento y ejemplo)
-    const descripcionInput = new TextInputBuilder()
-        .setCustomId('descripcionInput') // ID único para este campo
-        .setLabel("Detalle de la Solicitud")
+    const observacionesInput = new TextInputBuilder()
+        .setCustomId('observacionesInput') // ID único para este campo
+        .setLabel("Observaciones de la Solicitud")
         .setStyle('Paragraph') // Estilo de campo: multi-línea
         .setRequired(false); // Puedes cambiar a true si la descripción es obligatoria
 
@@ -405,7 +405,7 @@ function buildSolicitudModal() {
     const firstRow = new ActionRowBuilder().addComponents(pedidoInput);
     const secondRow = new ActionRowBuilder().addComponents(casoInput);
     const thirdRow = new ActionRowBuilder().addComponents(emailInput);
-    const fourthRow = new ActionRowBuilder().addComponents(descripcionInput); // Fila para la descripción
+    const fourthRow = new ActionRowBuilder().addComponents(observacionesInput); // Fila para la descripción
 
     // Añadir las filas de componentes al modal
     // Asegúrate que el número de addComponents coincide con las filas que has definido.
