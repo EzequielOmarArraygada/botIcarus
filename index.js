@@ -3,6 +3,20 @@ import { google } from 'googleapis';
 import path from 'path';
 import fetch from 'node-fetch'
 
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos
+        GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate si lo usas
+        GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes si NO usas solo slash commands
+        // No necesitas intents específicos para Interacciones (Slash Commands, Modals),
+        // esos permisos se dan al invitar el bot con el scope applications.commands
+    ]
+});
+
+// --- Variables de Entorno de Discord (estas ya las tienes) ---
+const discordToken = process.env.DISCORD_TOKEN;
+const targetChannelId = process.env.TARGET_CHANNEL_ID;
+
 let credentials;
 
 // --- Lógica para cargar credenciales SOLAMENTE desde GOOGLE_CREDENTIALS_JSON ---
