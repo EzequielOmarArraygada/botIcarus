@@ -4,14 +4,6 @@ import path from 'path';
 import fetch from 'node-fetch'
 
 
-
-
-
-// ... (dotenv config, Discord client setup) ...
-
-// --- Configuración de Google Sheets Y Google Drive ---
-// ... (cargar credenciales como antes) ...
-
 const auth = new google.auth.GoogleAuth({
     credentials,
     // ASEGÚRATE DE INCLUIR AMBOS SCOPES
