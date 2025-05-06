@@ -1,7 +1,11 @@
-// ... (importaciones existentes) ...
-const { google } = require('googleapis');
-const fetch = require('node-fetch'); // Importa node-fetch
-const path = require('path'); // Módulo nativo de Node.js para manejar rutas de archivos
+import { Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, ActionRowBuilder } from 'discord.js';
+import { google } from 'googleapis';
+import path from 'path';
+import fetch from 'node-fetch'
+
+
+
+
 
 // ... (dotenv config, Discord client setup) ...
 
