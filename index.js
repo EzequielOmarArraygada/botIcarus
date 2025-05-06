@@ -192,15 +192,27 @@ client.on('messageCreate', async message => {
 
 
         } catch (error) {
+            // --- MANEJO DE ERRORES MEJORADO ---
             console.error('Error durante la subida de archivos a Drive:', error);
 
             // Construir un mensaje de error detallado para el usuario
             let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingRequest.pedido}.`;
+
             // Intentar extraer mensaje de error de Google API si está disponible
-            if (error.response && error.response.data && error.response.data.error) {
-                 errorMessage += ` Error de Google API: ${error.response.data.error.error.message}`; // Ajuste para acceder al mensaje de error de Google
+            if (error.response && error.response.data) {
+                 // Verificar si hay un mensaje de error específico en la respuesta de Google
+                 if (error.response.data.error && error.response.data.error.message) {
+                      errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                 } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
+                      // A veces el mensaje está dentro de un array 'errors'
+                       errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                 } else {
+                      // Si no encontramos un mensaje estructurado, mostramos el status y statusText
+                      errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
+                 }
             } else {
-                 errorMessage += ` Detalles: ${error.message}`; // Mensaje de error general
+                 // Si no es un error de respuesta de Google API, mostramos el mensaje general del error
+                 errorMessage += ` Detalles: ${error.message}`;
             }
             errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
 
@@ -214,6 +226,8 @@ client.on('messageCreate', async message => {
          console.log(`Mensaje con adjuntos recibido de ${message.author.tag}, pero no está en estado de espera. Ignorando adjuntos.`);
          // Opcional: Puedes enviar un mensaje discreto al usuario si quieres
          // await message.react('❓'); // Reaccionar con un emoji de pregunta
+         // O puedes enviar un mensaje efímero:
+         // await message.reply({ content: 'Parece que enviaste archivos adjuntos, pero no estabas en medio de una solicitud. Usa /solicitud primero.', ephemeral: true });
     } else {
         // Si el mensaje no tiene adjuntos y el usuario no está esperando, es un mensaje normal.
         // console.log(`Mensaje normal sin adjuntos de ${message.author.tag}.`);
@@ -334,12 +348,18 @@ client.on('interactionCreate', async interaction => {
                       sheetSuccess = true; // Marcar como exitoso si no hubo error
 
                       // 2. Si la escritura en Sheet fue exitosa, poner al usuario en estado de espera de archivos
-                      // Guardamos el ID del usuario y el número de pedido asociado.
-                      waitingForAttachments.set(interaction.user.id, {
-                           pedido: pedido,
-                           timestamp: new Date() // Opcional: Guardar timestamp para posible expiración
-                      });
-                      console.log(`Usuario ${interaction.user.tag} (ID: ${interaction.user.id}) puesto en estado de espera de adjuntos para pedido ${pedido}.`);
+                      // Solo si hay una carpeta padre de Drive configurada, esperamos archivos.
+                      if (parentDriveFolderId) {
+                           // Guardamos el ID del usuario y el número de pedido asociado.
+                           waitingForAttachments.set(interaction.user.id, {
+                                pedido: pedido,
+                                timestamp: new Date() // Opcional: Guardar timestamp para posible expiración
+                           });
+                           console.log(`Usuario ${interaction.user.tag} (ID: ${interaction.user.id}) puesto en estado de espera de adjuntos para pedido ${pedido}.`);
+                      } else {
+                           console.warn('PARENT_DRIVE_FOLDER_ID no configurado. No se pondrá al usuario en estado de espera de adjuntos.');
+                      }
+
 
                  } else {
                       console.warn('Variables de Google Sheets no configuradas. Saltando escritura en Sheet y estado de espera.');
@@ -361,7 +381,7 @@ client.on('interactionCreate', async interaction => {
                  } else {
                      confirmationMessage += '❌ Solicitud no pudo cargarse en Google Sheets (configuración incompleta).';
                      // Si no se pudo guardar en Sheet, no esperamos archivos.
-                     waitingForAttachments.delete(interaction.user.id);
+                     waitingForAttachments.delete(interaction.user.id); // Asegurarse de que no esté en espera
                  }
 
 
@@ -376,10 +396,20 @@ client.on('interactionCreate', async interaction => {
                  // Construir un mensaje de error detallado para el usuario
                  let errorMessage = '❌ Hubo un error al procesar tu solicitud.';
                  // Intentar extraer mensaje de error de Google API si está disponible
-                 if (error.response && error.response.data && error.response.data.error) {
-                      errorMessage += ` Error de Google API: ${error.response.data.error.error.message}`; // Ajuste para acceder al mensaje de error de Google
+                 if (error.response && error.response.data) {
+                      // Verificar si hay un mensaje de error específico en la respuesta de Google
+                      if (error.response.data.error && error.response.data.error.message) {
+                           errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                      } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
+                           // A veces el mensaje está dentro de un array 'errors'
+                            errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                      } else {
+                           // Si no encontramos un mensaje estructurado, mostramos el status y statusText
+                           errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
+                      }
                  } else {
-                      errorMessage += ` Detalles: ${error.message}`; // Mensaje de error general
+                      // Si no es un error de respuesta de Google API, mostramos el mensaje general del error
+                      errorMessage += ` Detalles: ${error.message}`;
                  }
                  errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
 
