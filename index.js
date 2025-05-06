@@ -17,21 +17,20 @@ import path from 'path';              // Módulo nativo para manejo de rutas
 import fetch from 'node-fetch';       // Para descargar archivos adjuntos desde URL (Importación estándar ESM)
 
 
-// --- Configuración del Cliente de Discord (ESTE BLOQUE FALTABA O ESTABA MAL UBICADO) ---
+// --- Configuración del Cliente de Discord ---
 // Aquí se crea la instancia principal del bot
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos
-        GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate si lo usas
-        GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes si NO usas solo slash commands (y para el flujo original de parsing de texto)
-        // Los permisos para interacciones (Slash Commands, Modals) se dan al invitar el bot con el scope applications.commands
+        GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate
+        GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes, incluyendo adjuntos
     ]
 });
 
 // --- Variables de Entorno de Discord ---
 // Se leen de process.env después de importar 'dotenv/config'
 const discordToken = process.env.DISCORD_TOKEN;
-// Opcional: Canal donde restringir el comando /solicitud
+// Opcional: Canal donde restringir el comando /solicitud Y donde se esperan los archivos
 const targetChannelId = process.env.TARGET_CHANNEL_ID;
 
 
@@ -42,7 +41,6 @@ let credentials;
 
 // --- Lógica para cargar credenciales SOLAMENTE desde GOOGLE_CREDENTIALS_JSON ---
 // Este bloque asume que SIEMPRE usarás la variable GOOGLE_CREDENTIALS_JSON en el entorno (Railway)
-// Elimina la lógica de GOOGLE_CREDENTIALS_PATH para evitar errores de 'require' en ESM
 if (process.env.GOOGLE_CREDENTIALS_JSON) {
     try {
         // Parsear el contenido del JSON desde la variable de entorno
@@ -59,9 +57,6 @@ if (process.env.GOOGLE_CREDENTIALS_JSON) {
      // Salir del proceso si la variable principal no está
     process.exit(1);
 }
-
-// Puedes quitar el console.log de credentials antes de GoogleAuth si quieres, ya que la carga crítica está manejada arriba
-// console.log('Valor de la variable credentials antes de GoogleAuth:', credentials); // <-- Esta línea dio error ReferenceError antes porque 'credentials' no existía
 
 // Ahora sí, usar 'credentials' que ya debe estar cargada correctamente
 const auth = new google.auth.GoogleAuth({
@@ -97,10 +92,12 @@ if (!parentDriveFolderId) {
 }
 
 
-// --- Manejo Temporal de Archivos Adjuntos ---
-// Usamos un Map para guardar los archivos adjuntos mientras esperamos el Modal.
-// La clave será el ID del USUARIO. Limitación: Un usuario solo puede tener 1 solicitud pendiente a la vez.
-const pendingAttachments = new Map();
+// --- Manejo de Estado para Archivos Adjuntos Posteriores ---
+// Usaremos un Map para rastrear a los usuarios que han enviado un modal
+// y de quienes esperamos archivos adjuntos en el siguiente mensaje.
+// Clave: ID del usuario de Discord (string)
+// Valor: Un objeto con información de la solicitud, ej: { pedido: '...', timestamp: Date }
+const waitingForAttachments = new Map();
 
 
 // --- Eventos del Bot de Discord ---
@@ -112,12 +109,115 @@ client.once('ready', () => {
     // Puedes añadir aquí lógica para verificar que los comandos estén registrados globalmente si quieres, pero ya lo haces con el script deploy-commands.js
 });
 
-// Opcional: Listener de mensajes normales si lo necesitas para algo más
-// Este listener ya no se usa para procesar solicitudes con regex en este flujo.
+// --- Manejar Mensajes Normales (para recibir archivos adjuntos) ---
+// Este listener ahora es crucial para el flujo alternativo de archivos.
 client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-    // console.log(`Mensaje normal recibido en #${message.channel.name}: ${message.content}`);
-    // Puedes agregar lógica para comandos de mensaje o procesamiento de texto aquí si lo deseas.
+    // Ignorar mensajes de bots (incluido el nuestro)
+    if (message.author.bot) {
+        return;
+    }
+
+    // Opcional: Restringir a un canal específico si targetChannelId está configurado
+    if (targetChannelId && message.channelId !== targetChannelId) {
+        // console.log(`Mensaje recibido fuera del canal objetivo: ${message.content}`);
+        return; // Ignorar mensajes fuera del canal objetivo
+    }
+
+    console.log(`Mensaje recibido en el canal objetivo de ${message.author.tag} con ${message.attachments.size} adjuntos.`);
+
+    // --- Verificar si el usuario está esperando para enviar adjuntos ---
+    const userId = message.author.id;
+    const pendingRequest = waitingForAttachments.get(userId);
+
+    // Si el usuario está esperando adjuntos Y el mensaje tiene adjuntos
+    if (pendingRequest && message.attachments.size > 0) {
+        console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingRequest.pedido}. Procesando...`);
+
+        // Eliminar al usuario del estado de espera inmediatamente
+        waitingForAttachments.delete(userId);
+
+        // --- Procesar y subir archivos a Google Drive ---
+        let driveFolderLink = null; // Para guardar el enlace a la carpeta de Drive
+
+        try {
+            // Asegúrate de tener el ID de la carpeta padre de Drive configurado en .env
+            if (!parentDriveFolderId) {
+                 console.warn("PARENT_DRIVE_FOLDER_ID no configurado. No se subirán archivos adjuntos.");
+                 await message.reply({ content: '⚠️ No se pudo subir los archivos adjuntos: La carpeta de destino en Google Drive no está configurada en el bot.', ephemeral: true });
+                 return; // Salir si no hay carpeta padre configurada
+            }
+
+            console.log(`Iniciando subida de ${message.attachments.size} archivos a Google Drive para el pedido ${pendingRequest.pedido}...`);
+
+            // Nombre de la carpeta en Drive (usar el número de pedido de la solicitud pendiente)
+            const driveFolderName = `Pedido_${pendingRequest.pedido}`.replace(/[\/\\]/g, '_');
+
+            // Encontrar o crear la carpeta de destino en Drive
+            const folderId = await findOrCreateDriveFolder(drive, parentDriveFolderId, driveFolderName);
+            console.log(`Carpeta de Drive (ID: ${folderId}) encontrada o creada para el pedido ${pendingRequest.pedido}.`);
+
+            // Subir cada archivo adjunto a la carpeta encontrada/creada
+            const uploadPromises = Array.from(message.attachments.values()).map(attachment =>
+                // Llama a la función de ayuda para subir. Asegúrate que uploadFileToDrive usa 'fetch' importado.
+                uploadFileToDrive(drive, folderId, attachment)
+            );
+
+            // Esperar a que todas las subidas terminen
+            const uploadedFiles = await Promise.all(uploadPromises);
+            console.log(`Archivos subidos a Drive: ${uploadedFiles.map(f => f.name).join(', ')}`);
+
+            // Intentar obtener el enlace a la carpeta de Drive para la confirmación
+            if (folderId) {
+                 try {
+                    const folderMeta = await drive.files.get({
+                       fileId: folderId,
+                       fields: 'webViewLink' // Campo que contiene el enlace web
+                    });
+                    driveFolderLink = folderMeta.data.webViewLink;
+                 } catch (linkError) {
+                    console.error("Error al obtener el enlace de la carpeta de Drive:", linkError);
+                    driveFolderLink = "Enlace no disponible."; // Mensaje si no se pudo obtener el enlace
+                 }
+            }
+
+            // --- Responder al usuario con la confirmación de la subida ---
+            let confirmationMessage = `✅ Se ${message.attachments.size === 1 ? 'subió' : 'subieron'} ${message.attachments.size} ${message.attachments.size === 1 ? 'archivo' : 'archivos'} a Google Drive para el Pedido ${pendingRequest.pedido}.`;
+            if (driveFolderLink) {
+                 confirmationMessage += `\nCarpeta: ${driveFolderLink}`; // Enlace en nueva línea
+            }
+
+            // Responder como un mensaje efímero para no saturar el chat
+            await message.reply({ content: confirmationMessage, ephemeral: true });
+            console.log('Confirmación de subida de archivos enviada.');
+
+
+        } catch (error) {
+            console.error('Error durante la subida de archivos a Drive:', error);
+
+            // Construir un mensaje de error detallado para el usuario
+            let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingRequest.pedido}.`;
+            // Intentar extraer mensaje de error de Google API si está disponible
+            if (error.response && error.response.data && error.response.data.error) {
+                 errorMessage += ` Error de Google API: ${error.response.data.error.error.message}`; // Ajuste para acceder al mensaje de error de Google
+            } else {
+                 errorMessage += ` Detalles: ${error.message}`; // Mensaje de error general
+            }
+            errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
+
+            // Responder con el mensaje de error
+            await message.reply({ content: errorMessage, ephemeral: true });
+            console.log('Mensaje de error de subida de archivos enviado.');
+        }
+
+    } else if (message.attachments.size > 0) {
+         // Si el mensaje tiene adjuntos pero el usuario NO está esperando
+         console.log(`Mensaje con adjuntos recibido de ${message.author.tag}, pero no está en estado de espera. Ignorando adjuntos.`);
+         // Opcional: Puedes enviar un mensaje discreto al usuario si quieres
+         // await message.react('❓'); // Reaccionar con un emoji de pregunta
+    } else {
+        // Si el mensaje no tiene adjuntos y el usuario no está esperando, es un mensaje normal.
+        // console.log(`Mensaje normal sin adjuntos de ${message.author.tag}.`);
+    }
 });
 
 
@@ -137,21 +237,9 @@ client.on('interactionCreate', async interaction => {
                   return; // Salir del handler si no es el canal correcto
              }
 
-
-             // ** GUARDAR ARCHIVOS ADJUNTOS SI EXISTEN, USANDO user.id COMO CLAVE **
-             // Los archivos adjuntos vienen con la interacción inicial del comando
-             const attachments = interaction.attachments;
-             if (attachments && attachments.size > 0) {
-                 console.log(`Archivos adjuntos detectados: ${attachments.size}. Guardando en caché con clave user.id: ${interaction.user.id}`);
-                 // Guardamos el Collection de attachments usando el ID del usuario como clave.
-                 pendingAttachments.set(interaction.user.id, attachments);
-                 // Puedes añadir un temporizador aquí para limpiar el caché si el usuario no envía el modal a tiempo
-                 // setTimeout(() => pendingAttachments.delete(interaction.user.id), 1000 * 60 * 10); // ej: limpiar después de 10 minutos
-             } else {
-                 console.log('No hay archivos adjuntos en este comando.');
-                 // Si no hay adjuntos, asegúrate de limpiar cualquier archivo viejo que pudiera estar en el caché para este usuario
-                 pendingAttachments.delete(interaction.user.id);
-             }
+             // NOTA: Ya NO guardamos attachments aquí, ya que el usuario los enviará después.
+             // La lógica de attachments que estaba aquí se ELIMINA.
+             console.log('No se esperan archivos adjuntos en el comando inicial.');
 
 
             // !!! MOSTRAR EL MODAL DE SOLICITUD !!!
@@ -165,8 +253,8 @@ client.on('interactionCreate', async interaction => {
                 console.error('Error al mostrar el modal:', error);
                 // Si showModal falla, respondemos con un mensaje de error efímero
                 await interaction.reply({ content: 'Hubo un error al abrir el formulario de solicitud. Por favor, inténtalo de nuevo.', ephemeral: true });
-                // Limpiar attachments pendientes si falló el modal
-                pendingAttachments.delete(interaction.user.id);
+                // Si falló el modal, nos aseguramos de que el usuario no quede en un estado de espera (aunque no debería estarlo aún)
+                waitingForAttachments.delete(interaction.user.id);
             }
         } else {
             // Manejar otros comandos de barra si los tienes
@@ -185,7 +273,7 @@ client.on('interactionCreate', async interaction => {
              console.log(`Submisión del modal 'solicitudModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
              // Deferir la respuesta inmediatamente. Esto le dice a Discord que estamos procesando
-             // y evita que la interacción "expire" si tarda más de 3 segundos (como subir a Drive).
+             // y evita que la interacción "expire" si tarda más de 3 segundos.
              // ephemeral: true significa que la respuesta "Pensando..." y la respuesta final solo las verá el usuario que interactuó.
              await interaction.deferReply({ ephemeral: true });
 
@@ -194,19 +282,10 @@ client.on('interactionCreate', async interaction => {
              const pedido = interaction.fields.getTextInputValue('pedidoInput');
              const caso = interaction.fields.getTextInputValue('casoInput');
              const email = interaction.fields.getTextInputValue('emailInput');
-             // Recuperamos también la descripción si está en el modal
-             const observaciones = interaction.fields.getTextInputValue('observacionesInput');
+             // Recuperamos la descripción si está en el modal (aunque no la guardemos en Sheet)
+             const descripcion = interaction.fields.getTextInputValue('descripcionInput');
 
-             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${observaciones}`);
-
-
-             // !!! RECUPERAR ARCHIVOS ADJUNTOS PENDIENTES USANDO user.id COMO CLAVE !!!
-             // Usamos la misma clave user.id que usamos al guardar en el handler del comando
-             const attachments = pendingAttachments.get(interaction.user.id);
-             console.log(`Archivos adjuntos recuperados del caché para user ID ${interaction.user.id}: ${attachments ? attachments.size : 0}`);
-
-             // Limpiar el caché inmediatamente después de intentar recuperarlos para este usuario
-             pendingAttachments.delete(interaction.user.id);
+             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
 
 
              // Obtener la fecha y hora actual del sistema del bot
@@ -220,122 +299,85 @@ client.on('interactionCreate', async interaction => {
 
 
              // --- Construir el array de datos para la fila del Sheet ---
-             // El orden DEBE coincidir exactamente con las columnas en tu Google Sheet:
+             // El orden DEBE coincidir exactamente con tus 4 columnas en Google Sheet:
              // Col 1: "N° de pedido"
              // Col 2: "Fecha/Hora"
              // Col 3: "Caso"
              // Col 4: "Email"
-             // Col 5: "Descripción" (Si agregaste esta columna a tu Sheet)
+             // NO INCLUIMOS DESCRIPCIÓN SI TU HOJA TIENE SOLO 4 COLUMNAS
              const rowData = [
                  pedido,              // Datos del modal
                  fechaHoraFormateada, // Fecha/Hora del sistema
                  `#${caso}`,          // Datos del modal (con # añadido si lo deseas)
-                 email,               // Datos del modal
-                 observaciones          // Datos del modal
-                 // Si tu hoja solo tiene 4 columnas, omite la descripción aquí
+                 email               // Datos del modal
              ];
 
              console.log('Datos a escribir en Sheet:', rowData);
 
 
-             // --- Procesar Archivos (Si existen) y Escribir en Google Sheets ---
-             let driveFolderLink = null; // Para guardar el enlace a la carpeta de Drive
+             // --- Escribir en Google Sheets y Poner al usuario en estado de espera de archivos ---
              let sheetSuccess = false; // Bandera para saber si se escribió en Sheet
 
              try {
                  // 1. Escribir los datos de texto en Google Sheets
                  if (spreadsheetId && sheetRange) {
                       console.log('Intentando escribir en Google Sheets...');
-                      // Asegúrate que sheetRange abarca todas las columnas necesarias (ej. Hoja1!A:D o Hoja1!A:E)
+                      // ASEGÚRATE QUE sheetRange EN RAILWAY COINCIDE CON TUS 4 COLUMNAS (EJ. Hoja1!A:D)
                       await sheets.spreadsheets.values.append({
                           spreadsheetId: spreadsheetId,
                           range: sheetRange,
                           valueInputOption: 'USER_ENTERED', // Deja que Google interprete los datos
                           insertDataOption: 'INSERT_ROWS', // Agrega una nueva fila
-                          resource: { values: [rowData] }, // El array de datos como una fila
+                          resource: { values: [rowData] }, // rowData ahora tiene 4 elementos
                       });
                       console.log('Datos de Sheet agregados correctamente.');
                       sheetSuccess = true; // Marcar como exitoso si no hubo error
+
+                      // 2. Si la escritura en Sheet fue exitosa, poner al usuario en estado de espera de archivos
+                      // Guardamos el ID del usuario y el número de pedido asociado.
+                      waitingForAttachments.set(interaction.user.id, {
+                           pedido: pedido,
+                           timestamp: new Date() // Opcional: Guardar timestamp para posible expiración
+                      });
+                      console.log(`Usuario ${interaction.user.tag} (ID: ${interaction.user.id}) puesto en estado de espera de adjuntos para pedido ${pedido}.`);
+
                  } else {
-                      console.warn('Variables de Google Sheets no configuradas. Saltando escritura en Sheet.');
+                      console.warn('Variables de Google Sheets no configuradas. Saltando escritura en Sheet y estado de espera.');
                  }
 
 
-                 // 2. Procesar y subir archivos a Google Drive si hay adjuntos Y si configuraste PARENT_DRIVE_FOLDER_ID
-                 if (attachments && attachments.size > 0 && parentDriveFolderId) {
-                     console.log(`Iniciando subida de ${attachments.size} archivos a Google Drive...`);
-
-                     // Nombre de la carpeta en Drive (usar el número de pedido, limpiando caracteres problemáticos)
-                     const driveFolderName = `Pedido_${pedido}`.replace(/[\/\\]/g, '_');
-
-                     // Encontrar o crear la carpeta de destino en Drive
-                     const folderId = await findOrCreateDriveFolder(drive, parentDriveFolderId, driveFolderName);
-                     console.log(`Carpeta de Drive (ID: ${folderId}) encontrada o creada.`);
-
-                     // Subir cada archivo adjunto a la carpeta encontrada/creada
-                     // Convertimos el Collection de Discord.js a un Array para usar map y Promise.all
-                     const uploadPromises = Array.from(attachments.values()).map(attachment =>
-                         // Llama a la función de ayuda para subir. Asegúrate que uploadFileToDrive usa 'fetch' importado.
-                         uploadFileToDrive(drive, folderId, attachment)
-                     );
-
-                     // Esperar a que todas las subidas terminen
-                     const uploadedFiles = await Promise.all(uploadPromises);
-                     console.log(`Archivos subidos a Drive: ${uploadedFiles.map(f => f.name).join(', ')}`);
-
-                     // Intentar obtener el enlace a la carpeta de Drive para la confirmación
-                     if (folderId) {
-                          try {
-                             const folderMeta = await drive.files.get({
-                                fileId: folderId,
-                                fields: 'webViewLink' // Campo que contiene el enlace web
-                             });
-                             driveFolderLink = folderMeta.data.webViewLink;
-                          } catch (linkError) {
-                             console.error("Error al obtener el enlace de la carpeta de Drive:", linkError);
-                             driveFolderLink = "Enlace no disponible."; // Mensaje si no se pudo obtener el enlace
-                          }
-                     }
-
-                 } else {
-                    console.log('No hay archivos adjuntos o PARENT_DRIVE_FOLDER_ID no configurado. Saltando subida a Drive.');
-                 }
-
-
-                 // --- Responder al usuario con el resultado ---
+                 // --- Responder al usuario con la confirmación de la solicitud y la instrucción para archivos ---
                  let confirmationMessage = '';
                  if (sheetSuccess) {
                      confirmationMessage += '✅ Solicitud cargada correctamente en Google Sheets.';
-                 } else {
-                     confirmationMessage += '⚠️ Solicitud no pudo cargarse en Google Sheets (configuración incompleta).';
-                 }
 
-                 if (attachments && attachments.size > 0) {
-                      if (parentDriveFolderId) {
-                          confirmationMessage += ` Se ${attachments.size === 1 ? 'subió' : 'subieron'} ${attachments.size} ${attachments.size === 1 ? 'archivo' : 'archivos'} a Google Drive.`;
-                          if (driveFolderLink) {
-                               confirmationMessage += `\nCarpeta: ${driveFolderLink}`; // Enlace en nueva línea
-                          }
-                      } else {
-                           confirmationMessage += `\n⚠️ No se configuró PARENT_DRIVE_FOLDER_ID. No se subieron ${attachments.size} archivos.`;
-                      }
+                     // Si hay una carpeta padre de Drive configurada, instruir al usuario sobre los archivos.
+                     if (parentDriveFolderId) {
+                          confirmationMessage += '\nPor favor, envía los archivos adjuntos para esta solicitud en un **mensaje separado** aquí mismo en este canal.';
+                     } else {
+                          confirmationMessage += '\n⚠️ La carga de archivos adjuntos a Google Drive no está configurada en el bot.';
+                     }
+
                  } else {
-                      confirmationMessage += ' No se adjuntaron archivos.';
+                     confirmationMessage += '❌ Solicitud no pudo cargarse en Google Sheets (configuración incompleta).';
+                     // Si no se pudo guardar en Sheet, no esperamos archivos.
+                     waitingForAttachments.delete(interaction.user.id);
                  }
 
 
-                 // Usamos editReply porque habíamos llamado a deferReply al inicio del modalSubmit
+                 // Usamos editReply para enviar el mensaje final después de deferReply
                  await interaction.editReply({ content: confirmationMessage, ephemeral: true });
+                 console.log('Confirmación de solicitud enviada.');
 
 
              } catch (error) {
-                 console.error('Error general durante el procesamiento de la solicitud (Sheet o Drive):', error);
+                 console.error('Error general durante el procesamiento de la sumisión del modal (Sheets):', error);
 
                  // Construir un mensaje de error detallado para el usuario
                  let errorMessage = '❌ Hubo un error al procesar tu solicitud.';
                  // Intentar extraer mensaje de error de Google API si está disponible
                  if (error.response && error.response.data && error.response.data.error) {
-                      errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                      errorMessage += ` Error de Google API: ${error.response.data.error.error.message}`; // Ajuste para acceder al mensaje de error de Google
                  } else {
                       errorMessage += ` Detalles: ${error.message}`; // Mensaje de error general
                  }
@@ -343,8 +385,10 @@ client.on('interactionCreate', async interaction => {
 
                  // Usamos editReply para enviar el mensaje de error
                  await interaction.editReply({ content: errorMessage, ephemeral: true });
+                 console.log('Mensaje de error de sumisión de modal enviado.');
 
-                 // Aquí podrías añadir lógica para loguear el error en un servicio externo o notificarte.
+                 // Si hubo un error al guardar en Sheet, nos aseguramos de que el usuario no quede en estado de espera
+                 waitingForAttachments.delete(interaction.user.id);
              }
 
         } else {
@@ -393,19 +437,19 @@ function buildSolicitudModal() {
         .setStyle('Short')
         .setRequired(true);
 
-    // Campo para Descripción (Agregado según requerimiento y ejemplo)
-    const observacionesInput = new TextInputBuilder()
-        .setCustomId('observacionesInput') // ID único para este campo
-        .setLabel("Observaciones de la Solicitud")
+    // Campo para Descripción (Mantenemos en el modal, pero no se guarda en Sheet)
+    const descripcionInput = new TextInputBuilder()
+        .setCustomId('descripcionInput') // ID único para este campo
+        .setLabel("Detalle de la Solicitud")
         .setStyle('Paragraph') // Estilo de campo: multi-línea
-        .setRequired(false); // Puedes cambiar a true si la descripción es obligatoria
+        .setRequired(false); // Puede que no siempre sea necesaria
 
     // Un Modal puede tener hasta 5 ActionRowBuilder. Cada ActionRowBuilder puede contener 1 TextInputBuilder.
     // Creamos una fila por cada campo de texto.
     const firstRow = new ActionRowBuilder().addComponents(pedidoInput);
     const secondRow = new ActionRowBuilder().addComponents(casoInput);
     const thirdRow = new ActionRowBuilder().addComponents(emailInput);
-    const fourthRow = new ActionRowBuilder().addComponents(observacionesInput); // Fila para la descripción
+    const fourthRow = new ActionRowBuilder().addComponents(descripcionInput); // Fila para la descripción
 
     // Añadir las filas de componentes al modal
     // Asegúrate que el número de addComponents coincide con las filas que has definido.
@@ -516,7 +560,7 @@ async function uploadFileToDrive(drive, folderId, attachment) {
 }
 
 
-// --- Conectar el Bot a Discord usando el Token (ESTE BLOQUE FALTABA) ---
+// --- Conectar el Bot a Discord usando el Token ---
 // Inicia sesión con el token del bot. Añadimos mensajes de log y manejador de errores.
 
 console.log("Paso 1: Llegamos a la sección de conexión."); // <-- Log de inicio
@@ -530,7 +574,6 @@ client.login(discordToken).catch(err => {
 
 // Este log quizás no aparezca si la conexión falla inmediatamente o si process.exit(1) se ejecuta rápido
 console.log("Paso 4: client.login() llamado. Esperando evento 'ready' o error."); // <-- Log después de llamar a login
-
 
 // NOTA: Asegúrate que tienes un archivo package.json en la raíz de tu proyecto
 // con {"type": "module"} y las dependencias discord.js, googleapis, dotenv, node-fetch.
