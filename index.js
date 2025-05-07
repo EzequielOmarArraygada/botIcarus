@@ -342,7 +342,7 @@ client.on('interactionCreate', async interaction => {
                       await sheets.spreadsheets.values.append({
                           spreadsheetId: spreadsheetId,
                           range: sheetRange,
-                          valueInputOption: 'USER_ENTERED', // Deja que Google interprete los datos
+                          valueInputOption: 'RAW', // Deja que Google interprete los datos
                           insertDataOption: 'INSERT_ROWS', // Agrega una nueva fila
                           resource: { values: [rowData] }, // rowData ahora tiene 4 elementos
                       });
