@@ -296,10 +296,35 @@ client.on('interactionCreate', async interaction => {
              console.log(`Consultando API JSON: ${andreaniApiUrl}`);
 
              try {
-                 const apiResponse = await fetch(andreaniApiUrl);
+                 // Definimos los encabezados, incluyendo los que encontramos en la pestaña Network.
+                 // NOTA: La clave de Authorization puede ser dinámica.
+                 // Considera almacenarla en una variable de entorno (ej: process.env.ANDREANI_API_AUTH)
+                 const headers = {
+                     'Accept': 'application/json, text/plain, */*',
+                     // Incluimos el encabezado Authorization con el valor encontrado
+                     'Authorization': 'XqPMiwXzTRKHH0mF3gmtPtQt3LNGIuqCTdgaUHINMdmlaFid0x9MzlYTKXPxluYQ', // <-- ¡Valor encontrado!
+                     'Origin': 'https://www.andreani.com', // Incluimos Origin
+                     'Referer': 'https://www.andreani.com/', // Incluimos Referer (adaptado a la página principal de seguimiento si es necesario)
+                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36', // Mantener un User-Agent común
+                     // Otros encabezados encontrados que podrían ser relevantes:
+                     'Accept-Encoding': 'gzip, deflate, br, zstd',
+                     'Accept-Language': 'es-419,es;q=0.9',
+                     'Connection': 'keep-alive',
+                     // 'Host' no suele ser necesario en fetch, lo maneja automáticamente
+                     'Sec-Fetch-Dest': 'empty',
+                     'Sec-Fetch-Mode': 'cors',
+                     'Sec-Fetch-Site': 'same-site',
+                     // Los encabezados sec-ch-ua también pueden ser útiles, pero a veces no son estrictamente necesarios
+                     'sec-ch-ua': '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+                     'sec-ch-ua-mobile': '?0',
+                     'sec-ch-ua-platform': '"Windows"',
+                 };
+
+                 const apiResponse = await fetch(andreaniApiUrl, { headers: headers });
 
                  if (!apiResponse.ok) {
                      // Si la respuesta HTTP no es 2xx, lanzar un error
+                     // Incluimos el status y statusText en el error
                      throw new Error(`Error HTTP al consultar la API de Andreani: ${apiResponse.status} ${apiResponse.statusText}`);
                  }
 
@@ -309,12 +334,13 @@ client.on('interactionCreate', async interaction => {
                  // console.log(JSON.stringify(trackingData, null, 2)); // Opcional: log completo del JSON
 
                  // --- Extraer la información del JSON ---
-                 const procesoActual = trackingData.procesoActual;
-                 const fechaEstimadaDeEntrega = trackingData.fechaEstimadaDeEntrega;
-                 const timelines = trackingData.timelines;
-                 const numeroAndreani = trackingData.numeroAndreani; // Asegurarnos de usar el número del JSON por si acaso
+                 // Verificamos si la respuesta contiene la estructura esperada
+                 if (trackingData && trackingData.procesoActual && trackingData.timelines) {
+                     const procesoActual = trackingData.procesoActual;
+                     const fechaEstimadaDeEntrega = trackingData.fechaEstimadaDeEntrega;
+                     const timelines = trackingData.timelines;
+                     const numeroAndreani = trackingData.numeroAndreani; // Asegurarnos de usar el número del JSON por si acaso
 
-                 if (procesoActual && procesoActual.titulo) {
                      trackingInfo = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n`;
                      trackingInfo += `${procesoActual.titulo}`;
 
@@ -327,6 +353,9 @@ client.on('interactionCreate', async interaction => {
 
                      // Añadir historial de eventos si está disponible
                      if (timelines && timelines.length > 0) {
+                         // Ordenar las etapas del timeline por el campo 'orden' de menor a mayor
+                         timelines.sort((a, b) => a.orden - b.orden);
+
                          trackingInfo += '\n\nHistorial:';
                          // Iterar sobre cada timeline (cada etapa principal)
                          for (const timeline of timelines) {
@@ -365,8 +394,9 @@ client.on('interactionCreate', async interaction => {
                              }
                          }
 
-                         if (trackingInfo === `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n${procesoActual.titulo}` + (fechaEstimadaDeEntrega ? ` - ${fechaEstimadaDeEntrega.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '')}` : '') + '\n\nHistorial:') {
-                             // Si después de iterar no se añadió ningún evento al historial
+                         // Verificar si se añadió algo al historial después de iterar
+                         const initialHistoryString = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n${procesoActual.titulo}` + (fechaEstimadaDeEntrega ? ` - ${fechaEstimadaDeEntrega.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '')}` : '') + '\n\nHistorial:';
+                         if (trackingInfo === initialHistoryString) {
                               trackingInfo += '\nSin historial de eventos detallado disponible.';
                          }
 
@@ -378,14 +408,15 @@ client.on('interactionCreate', async interaction => {
                      console.log(`Información de tracking extraída y formateada.`);
 
                  } else {
-                     // Si no se pudo extraer el estado principal del JSON
-                     trackingInfo = `😕 No se pudo encontrar la información de estado en la respuesta de la API para el número **${trackingNumber}**. La estructura de la respuesta podría haber cambiado o el tracking no es válido.`;
-                     console.log(`No se pudo extraer información de tracking del JSON para ${trackingNumber}.`);
+                     // Si la estructura del JSON no es la esperada
+                     trackingInfo = `😕 No se pudo encontrar la información de tracking en la respuesta de la API para el número **${trackingNumber}**. La estructura de la respuesta podría haber cambiado.`;
+                     console.log(`Estructura de respuesta JSON inesperada para ${trackingNumber}.`);
                  }
 
 
              } catch (error) {
                  console.error('Error al consultar la API de tracking de Andreani:', error);
+                 // Incluimos el mensaje de error en la respuesta al usuario para depuración
                  trackingInfo = `❌ Hubo un error al consultar el estado del tracking para **${trackingNumber}**. Detalles: ${error.message}`;
              }
 
