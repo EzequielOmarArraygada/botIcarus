@@ -355,6 +355,14 @@ client.on('interactionCreate', async interaction => {
                      // La respuesta es 200 OK, ahora leemos el cuerpo (que es HTML según la captura)
                      console.log(`Consulta API devolvió 200 OK. Leyendo y parseando HTML...`);
                      const apiHtml = await apiResponse.text();
+
+                     // --- DEBUGGING: Imprimir el HTML recibido para inspección ---
+                     console.log("--- HTML recibido de la API de Andreani ---");
+                     console.log(apiHtml);
+                     console.log("--- Fin HTML recibido ---");
+                     // --- FIN DEBUGGING ---
+
+
                      const $api = cheerio.load(apiHtml);
 
                      // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
@@ -605,7 +613,7 @@ client.on('interactionCreate', async interaction => {
              // Si la sumisión es de otro modal que no manejamos
              // console.log(`Submisión de modal desconocida con customId: ${interaction.customId}`);
              // if (!interaction.replied && !interaction.deferred) {
-             //      await interaction.reply({ content: 'Submisión de modal desconocida.', ephemeral: true });
+             //      await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
              // }
         }
     }
@@ -672,7 +680,7 @@ function buildSolicitudModal() {
 /**
  * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
  * Si no existe, la crea.
- * @param {object} drive - Instancia de la API de Google Drive.
+ * @param {object} drive - Instancia de la API de Google Drive (obtenida de google.drive()).
  * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
  * @param {string} folderName - Nombre de la carpeta a buscar/crear.
  * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
