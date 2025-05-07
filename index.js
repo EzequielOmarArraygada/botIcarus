@@ -308,7 +308,8 @@ client.on('interactionCreate', async interaction => {
              const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
                  year: 'numeric', month: '2-digit', day: '2-digit',
                  hour: '2-digit', minute: '2-digit', second: '2-digit',
-                 hour12: false // Formato 24 horas
+                 hour12: false, // Formato 24 horas
+                 timeZone: 'America/Argentina/Buenos_Aires' 
              }).replace(/\//g, '-'); // Reemplazar '/' con '-' para el formato DD-MM-YYYY
 
 
