@@ -34,8 +34,9 @@ const client = new Client({
 // --- Variables de Entorno de Discord ---
 // Se leen de process.env después de importar 'dotenv/config'
 const discordToken = process.env.DISCORD_TOKEN;
-// Opcional: Canal donde restringir el comando /solicitud Y donde se esperan los archivos
-const targetChannelId = process.env.TARGET_CHANNEL_ID;
+// Canales específicos donde se permiten los comandos
+const targetChannelIdFacA = process.env.TARGET_CHANNEL_ID_FAC_A; // Canal para /solicitud
+const targetChannelIdEnvios = process.env.TARGET_CHANNEL_ID_ENVIOS; // Canal para /tracking
 
 
 // --- Configuración de Google Sheets Y Google Drive ---
@@ -115,17 +116,21 @@ client.once('ready', () => {
 
 // --- Manejar Mensajes Normales (para recibir archivos adjuntos) ---
 // Este listener ahora es crucial para el flujo alternativo de archivos.
+// NOTA: Este listener se activa para *cualquier* mensaje en los canales donde el bot tiene permisos.
+// Si quieres restringir la recepción de adjuntos a un canal específico,
+// puedes añadir una verificación similar a la de los comandos aquí también.
 client.on('messageCreate', async message => {
     // Ignorar mensajes de bots (incluido el nuestro)
     if (message.author.bot) {
         return;
     }
 
-    // Opcional: Restringir a un canal específico si targetChannelId está configurado
-    if (targetChannelId && message.channelId !== targetChannelId) {
-        // console.log(`Mensaje recibido fuera del canal objetivo: ${message.content}`);
-        return; // Ignorar mensajes fuera del canal objetivo
+    // Opcional: Restringir la recepción de adjuntos a un canal específico (ej. el mismo canal que /solicitud)
+    if (targetChannelIdFacA && message.channelId !== targetChannelIdFacA) {
+         // console.log(`Mensaje recibido fuera del canal objetivo para adjuntos: ${message.content}`);
+         return; // Ignorar mensajes fuera del canal objetivo para adjuntos
     }
+
 
     console.log(`Mensaje recibido en el canal objetivo de ${message.author.tag} con ${message.attachments.size} adjuntos.`);
 
@@ -249,9 +254,9 @@ client.on('interactionCreate', async interaction => {
         if (interaction.commandName === 'solicitud') {
              console.log(`Comando /solicitud recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-             // Opcional: Restringir el comando a un canal específico
-             if (targetChannelId && interaction.channelId !== targetChannelId) {
-                  await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelId}>.`, ephemeral: true });
+             // --- Restringir el comando /solicitud a un canal específico ---
+             if (targetChannelIdFacA && interaction.channelId !== targetChannelIdFacA) {
+                  await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdFacA}>.`, ephemeral: true });
                   return; // Salir del handler si no es el canal correcto
              }
 
@@ -276,6 +281,13 @@ client.on('interactionCreate', async interaction => {
             }
         } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
              console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+
+             // --- Restringir el comando /tracking a un canal específico ---
+             if (targetChannelIdEnvios && interaction.channelId !== targetChannelIdEnvios) {
+                 await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdEnvios}>.`, ephemeral: true });
+                 return; // Salir del handler si no es el canal correcto
+             }
+
 
              // Deferir la respuesta inmediatamente, ya que la consulta a la API puede tardar.
              await interaction.deferReply({ ephemeral: false }); // Puedes hacerlo efímero si prefieres que solo el usuario vea el resultado
