@@ -231,7 +231,7 @@ client.on('messageCreate', async message => {
          console.log(`Mensaje con adjuntos recibido de ${message.author.tag}, pero no está en estado de espera. Ignorando adjuntos.`);
          // Opcional: Puedes enviar un mensaje discreto al usuario si quieres
          // await message.react('❓'); // Reaccionar con un emoji de pregunta
-         // O puedes enviar un mensaje efímero:
+         // o puedes enviar un mensaje efímero:
          // await message.reply({ content: 'Parece que enviaste archivos adjuntos, pero no estabas en medio de una solicitud. Usa /solicitud primero.', ephemeral: true });
     } else {
         // Si el mensaje no tiene adjuntos y el usuario no está esperando, es un mensaje normal.
@@ -358,36 +358,38 @@ client.on('interactionCreate', async interaction => {
                      const $api = cheerio.load(apiHtml);
 
                      // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
-                     // Usando los fragmentos de HTML proporcionados para identificar los selectores exactos.
+                     // Usando el HTML proporcionado para identificar los selectores exactos.
 
                      // Selector para el estado principal del pedido
-                     const estadoEnvioElement = $api('p[data-testid="tracking-state"]');
+                     // Buscamos un div con la clase específica que contiene el estado principal
+                     const estadoEnvioElement = $api('div.TrackingStatus_styles__status__wX2rQ');
                      const estadoEnvio = estadoEnvioElement.text().trim();
 
                      // Selector para el detalle del estado (como la fecha de entrega)
-                     const detalleEstadoElement = $api('.TopComponent_styles__fechaEstimada_DLMYI');
+                     // Buscamos un p con la clase específica que contiene el detalle
+                     const detalleEstadoElement = $api('p.TopComponent_styles__fechaEstimada_DLMYI');
                      const detalleEstado = detalleEstadoElement.text().trim();
 
                      let eventosEnvio = '';
                      // Selector para el contenedor principal de la línea de tiempo de eventos
+                     // Buscamos el div con data-testid="tracking-dropdwon"
                      const eventosContainer = $api('div[data-testid="tracking-dropdwon"]');
 
                      if (eventosContainer.length > 0) {
                          eventosEnvio = '\n\nHistorial:';
                          // Iterar sobre cada lista de eventos (cada ul con data-testid="vertical-timeline-item")
-                         eventosContainer.find('ul[data-testid="vertical-timeline-item"]').each((ulIndex, ulElement) => {
-                             // Iterar sobre cada evento individual (li) dentro de la lista actual
-                             $api('li.VerticalTimelineItem_styles__item_L08iB', ulElement).each((liIndex, liElement) => {
-                                 // Extraer fecha, hora y descripción usando los selectores identificados
-                                 const fecha = $api(liElement).find('.VerticalTimelineItem_styles__date_kQNcb').text().trim();
-                                 const hora = $api(liElement).find('.VerticalTimelineItem_styles__time_A03zq').text().trim();
-                                 const descripcion = $api(liElement).find('.VerticalTimelineItem_styles__description__60Qj').text().trim();
+                         // Dentro del contenedor, buscamos los elementos de la línea de tiempo
+                         $api('div.VerticalTimeline_styles__timeline__f375T div.VerticalTimelineItem_styles__item_L08iB').each((index, element) => {
+                             // Extraer fecha, hora y descripción usando los selectores identificados dentro de cada item
+                             const fecha = $api(element).find('p.VerticalTimelineItem_styles__date_kQNcb').text().trim();
+                             const hora = $api(element).find('p.VerticalTimelineItem_styles__time_A03zq').text().trim();
+                             const descripcion = $api(element).find('p.VerticalTimelineItem_styles__description__60Qj').text().trim();
 
-                                 if (fecha || hora || descripcion) { // Solo agrega si hay contenido
-                                     eventosEnvio += `\n- ${fecha} ${hora}: ${descripcion}`;
-                                 }
-                             });
+                             if (fecha || hora || descripcion) { // Solo agrega si hay contenido
+                                 eventosEnvio += `\n- ${fecha} ${hora}: ${descripcion}`;
+                             }
                          });
+
 
                          if (eventosEnvio === '\n\nHistorial:') { // Si no se encontraron eventos individuales
                               eventosEnvio += '\nSin historial de eventos detallado disponible.';
