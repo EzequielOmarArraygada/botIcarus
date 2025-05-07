@@ -471,7 +471,7 @@ function buildSolicitudModal() {
     // Campo para Descripción (Mantenemos en el modal, pero no se guarda en Sheet)
     const observacionesInput = new TextInputBuilder()
         .setCustomId('observacionesInput') // ID único para este campo
-        .setLabel("Osbervasiones de la solicitud")
+        .setLabel("Observasiones de la solicitud")
         .setStyle('Paragraph') // Estilo de campo: multi-línea
         .setRequired(false); // Puede que no siempre sea necesaria
 
