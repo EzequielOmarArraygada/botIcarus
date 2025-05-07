@@ -358,29 +358,32 @@ client.on('interactionCreate', async interaction => {
                      const $api = cheerio.load(apiHtml);
 
                      // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
-                     // Usando el HTML proporcionado para identificar los selectores exactos.
+                     // Intentaremos usar selectores basados en data-testid y clases para mayor robustez.
 
-                     // Selector para el estado principal del pedido
-                     // Buscamos un div con la clase específica que contiene el estado principal
-                     const estadoEnvioElement = $api('div.TrackingStatus_styles__status__wX2rQ');
-                     const estadoEnvio = estadoEnvioElement.text().trim();
+                     // Selector para el estado principal del pedido usando data-testid
+                     const estadoEnvioElement = $api('p[data-testid="tracking-state"]');
+                     let estadoEnvio = estadoEnvioElement.text().trim();
+
+                     // Si no encontramos el estado principal con data-testid, intentamos con la clase anterior
+                     if (!estadoEnvio) {
+                          const fallbackEstadoElement = $api('div.TrackingStatus_styles__status__wX2rQ');
+                          estadoEnvio = fallbackEstadoElement.text().trim();
+                     }
+
 
                      // Selector para el detalle del estado (como la fecha de entrega)
-                     // Buscamos un p con la clase específica que contiene el detalle
-                     const detalleEstadoElement = $api('p.TopComponent_styles__fechaEstimada_DLMYI');
+                     const detalleEstadoElement = $api('div.TopComponent_styles__fechaEstimada_DLMYI');
                      const detalleEstado = detalleEstadoElement.text().trim();
 
                      let eventosEnvio = '';
-                     // Selector para el contenedor principal de la línea de tiempo de eventos
-                     // Buscamos el div con data-testid="tracking-dropdwon"
+                     // Selector para el contenedor principal de la línea de tiempo de eventos usando data-testid
                      const eventosContainer = $api('div[data-testid="tracking-dropdwon"]');
 
                      if (eventosContainer.length > 0) {
                          eventosEnvio = '\n\nHistorial:';
-                         // Iterar sobre cada lista de eventos (cada ul con data-testid="vertical-timeline-item")
-                         // Dentro del contenedor, buscamos los elementos de la línea de tiempo
-                         $api('div.VerticalTimeline_styles__timeline__f375T div.VerticalTimelineItem_styles__item_L08iB').each((index, element) => {
-                             // Extraer fecha, hora y descripción usando los selectores identificados dentro de cada item
+                         // Iterar sobre cada item de la línea de tiempo usando data-testid
+                         $api('li[data-testid="vertical-timeline-item"]').each((index, element) => {
+                             // Dentro de cada item, extraemos fecha, hora y descripción usando clases
                              const fecha = $api(element).find('p.VerticalTimelineItem_styles__date_kQNcb').text().trim();
                              const hora = $api(element).find('p.VerticalTimelineItem_styles__time_A03zq').text().trim();
                              const descripcion = $api(element).find('p.VerticalTimelineItem_styles__description__60Qj').text().trim();
@@ -390,16 +393,32 @@ client.on('interactionCreate', async interaction => {
                              }
                          });
 
+                         // Fallback si los items con data-testid="vertical-timeline-item" no funcionan,
+                         // intentamos con la clase li.VerticalTimelineItem_styles__item_L08iB directamente.
+                         if (eventosEnvio === '\n\nHistorial:') {
+                             console.log("Intentando selectores de historial de fallback...");
+                             $api('li.VerticalTimelineItem_styles__item_L08iB').each((index, element) => {
+                                 const fecha = $api(element).find('p.VerticalTimelineItem_styles__date_kQNcb').text().trim();
+                                 const hora = $api(element).find('p.VerticalTimelineItem_styles__time_A03zq').text().trim();
+                                 const descripcion = $api(element).find('p.VerticalTimelineItem_styles__description__60Qj').text().trim();
 
-                         if (eventosEnvio === '\n\nHistorial:') { // Si no se encontraron eventos individuales
+                                  if (fecha || hora || descripcion) { // Solo agrega si hay contenido
+                                      eventosEnvio += `\n- ${fecha} ${hora}: ${descripcion}`;
+                                  }
+                             });
+                         }
+
+
+                         if (eventosEnvio === '\n\nHistorial:') { // Si después de fallbacks no hay eventos
                               eventosEnvio += '\nSin historial de eventos detallado disponible.';
                          }
+
 
                      } else {
                          eventosEnvio = '\n\nSin historial de eventos disponible.';
                      }
 
-                     // --- FIN DE LA SECCIÓN DE PARSEO - SELECTORES AJUSTADOS ---
+                     // --- FIN DE LA SECCIÓN DE PARSEO - SELECTORES AJUSTADOS CON data-testid ---
 
                      // Combinar el estado principal y el detalle del estado si ambos existen
                      if (estadoEnvio && detalleEstado) {
@@ -653,7 +672,7 @@ function buildSolicitudModal() {
 /**
  * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
  * Si no existe, la crea.
- * @param {object} drive - Instancia de la API de Google Drive (obtenida de google.drive()).
+ * @param {object} drive - Instancia de la API de Google Drive.
  * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
  * @param {string} folderName - Nombre de la carpeta a buscar/crear.
  * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
