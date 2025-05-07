@@ -297,9 +297,9 @@ client.on('interactionCreate', async interaction => {
              const caso = interaction.fields.getTextInputValue('casoInput');
              const email = interaction.fields.getTextInputValue('emailInput');
              // Recuperamos la descripción si está en el modal (aunque no la guardemos en Sheet)
-             const descripcion = interaction.fields.getTextInputValue('descripcionInput');
+             const observaciones = interaction.fields.getTextInputValue('observacionesInput');
 
-             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
+             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${observaciones}`);
 
 
              // Obtener la fecha y hora actual del sistema del bot
@@ -468,9 +468,9 @@ function buildSolicitudModal() {
         .setRequired(true);
 
     // Campo para Descripción (Mantenemos en el modal, pero no se guarda en Sheet)
-    const descripcionInput = new TextInputBuilder()
-        .setCustomId('descripcionInput') // ID único para este campo
-        .setLabel("Detalle de la Solicitud")
+    const observacionesInput = new TextInputBuilder()
+        .setCustomId('observacionesInput') // ID único para este campo
+        .setLabel("Osbervasiones de la solicitud")
         .setStyle('Paragraph') // Estilo de campo: multi-línea
         .setRequired(false); // Puede que no siempre sea necesaria
 
@@ -479,7 +479,7 @@ function buildSolicitudModal() {
     const firstRow = new ActionRowBuilder().addComponents(pedidoInput);
     const secondRow = new ActionRowBuilder().addComponents(casoInput);
     const thirdRow = new ActionRowBuilder().addComponents(emailInput);
-    const fourthRow = new ActionRowBuilder().addComponents(descripcionInput); // Fila para la descripción
+    const fourthRow = new ActionRowBuilder().addComponents(observacionesInput); // Fila para la descripción
 
     // Añadir las filas de componentes al modal
     // Asegúrate que el número de addComponents coincide con las filas que has definido.
