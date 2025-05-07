@@ -358,27 +358,33 @@ client.on('interactionCreate', async interaction => {
                      const $api = cheerio.load(apiHtml);
 
                      // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
-                     // ESTA ES LA PARTE QUE DEBES ADAPTAR.
-                     // Necesitas inspeccionar el HTML que devuelve la URL de la API (la que termina en .json)
-                     // cuando buscas un tracking válido para encontrar los selectores CSS
-                     // (clases, IDs, estructura) que contienen el estado, los eventos, etc.
+                     // Basándome en la estructura visible en la captura y el HTML proporcionado,
+                     // intentaré usar selectores que apunten a los elementos comunes de estado y lista de eventos.
+                     // ES POSIBLE QUE NECESITES AJUSTAR ESTOS SELECTORES SI LA ESTRUCTURA VARÍA.
 
-                     // --- Selectores CSS tentativos basados en el HTML proporcionado ---
-                     // Busca un elemento que contenga el estado principal. Podría ser un h2 o p dentro de una sección.
-                     const estadoEnvioElement = $api('h2'); // <<< Selector tentativo: Busca todos los h2 y toma el primero
-                     const estadoEnvio = estadoEnvioElement.first().text().trim(); // Tomamos el texto del primer h2 encontrado
+                     // Selector para el estado principal. Buscamos un h2 dentro del contenedor principal de tracking.
+                     // Clases observadas en la captura: Tracking styles_page_0d9f
+                     // REEMPLAZA '.Tracking.styles_page_0d9f h2' con el selector CSS correcto para el estado principal.
+                     const estadoEnvioElement = $api('.Tracking.styles_page_0d9f h2');
+                     const estadoEnvio = estadoEnvioElement.first().text().trim(); // Tomamos el texto del primer h2 encontrado dentro de ese contenedor
 
                      let eventosEnvio = '';
-                     // Busca la lista de eventos. Podría ser un ul o ol.
-                     const eventosList = $api('ul'); // <<< Selector tentativo: Busca todos los ul y toma el primero
+                     // Selector para la lista de eventos. Buscamos un ul dentro del contenedor principal de tracking.
+                     // REEMPLAZA '.Tracking.styles_page_0d9f ul' con el selector CSS correcto para la lista de eventos.
+                     const eventosList = $api('.Tracking.styles_page_0d9f ul');
                      if (eventosList.length > 0) {
                          eventosEnvio = '\n\nHistorial:';
-                         // Busca los elementos de lista (li) dentro de la lista encontrada
-                         $api('li', eventosList.first()).each((index, element) => { // Busca li dentro del primer ul
-                             // Dentro de cada li, busca elementos que contengan la fecha/hora y descripción.
-                             // Esto es muy tentativo y DEBE SER VERIFICADO en el Inspector de Elementos.
-                             const fechaHora = $api(element).find('span:first-child').text().trim(); // <<< Selector tentativo: primer span dentro del li
-                             const descripcion = $api(element).find('span:last-child').text().trim(); // <<< Selector tentativo: último span dentro del li
+                         // Selector para cada elemento de la lista de eventos (li).
+                         // Buscamos los li dentro del ul encontrado.
+                         // REEMPLAZA 'li' con el selector CSS correcto para cada evento dentro de la lista.
+                         $api('li', eventosList.first()).each((index, element) => {
+                             // Dentro de cada li, buscamos los elementos que contienen la fecha/hora y descripción.
+                             // Basado en patrones comunes, podrían ser spans, divs, etc.
+                             // Intentaremos con spans dentro del li.
+                             // REEMPLAZA 'span:first-child' y 'span:last-child' con los selectores correctos
+                             // para la fecha/hora y la descripción dentro de cada evento (li).
+                             const fechaHora = $api(element).find('span:first-child').text().trim();
+                             const descripcion = $api(element).find('span:last-child').text().trim();
                              if (fechaHora || descripcion) { // Solo agrega si hay contenido
                                  eventosEnvio += `\n- ${fechaHora}: ${descripcion}`;
                              }
@@ -387,7 +393,7 @@ client.on('interactionCreate', async interaction => {
                          eventosEnvio = '\n\nSin historial de eventos disponible.';
                      }
 
-                     // --- FIN Selectores CSS tentativos ---
+                     // --- FIN DE LA SECCIÓN DE PARSEO - SELECTORES AJUSTADOS TENTATIVAMENTE ---
 
 
                      if (estadoEnvio) {
@@ -570,7 +576,7 @@ client.on('interactionCreate', async interaction => {
              // Si la sumisión es de otro modal que no manejamos
              // console.log(`Submisión de modal desconocida con customId: ${interaction.customId}`);
              // if (!interaction.replied && !interaction.deferred) {
-             //      await interaction.reply({ content: 'Submisión de modal desconocida.', ephemeral: true });
+             //      await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
              // }
         }
     }
@@ -637,7 +643,7 @@ function buildSolicitudModal() {
 /**
  * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
  * Si no existe, la crea.
- * @param {object} drive - Instancia de la API de Google Drive (obtenida de google.drive()).
+ * @param {object} drive - Instancia de la API de Google Drive.
  * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
  * @param {string} folderName - Nombre de la carpeta a buscar/crear.
  * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
@@ -683,7 +689,7 @@ async function findOrCreateDriveFolder(drive, parentId, folderName) {
     } catch (error) {
          console.error(`Error al buscar o crear la carpeta '${folderName}' en Drive:`, error);
          throw error; // Relanzar el error para que sea manejado por el try/catch principal
-    }
+     }
 }
 
 /**
