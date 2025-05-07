@@ -296,13 +296,21 @@ client.on('interactionCreate', async interaction => {
              console.log(`Consultando API JSON: ${andreaniApiUrl}`);
 
              try {
+                 // --- OBTENER EL ENCABEZADO DE AUTORIZACIÓN DESDE VARIABLES DE ENTORNO ---
+                 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH;
+
+                 if (!andreaniAuthHeader) {
+                      console.error("Error CRÍTICO: La variable de entorno ANDREANI_API_AUTH no está configurada.");
+                      await interaction.editReply({ content: '❌ Error de configuración del bot: La clave de autenticación para Andreani no está configurada.', ephemeral: true });
+                      return; // Salir si no hay clave de autenticación
+                 }
+
+
                  // Definimos los encabezados, incluyendo los que encontramos en la pestaña Network.
-                 // NOTA: La clave de Authorization puede ser dinámica.
-                 // Considera almacenarla en una variable de entorno (ej: process.env.ANDREANI_API_AUTH)
                  const headers = {
                      'Accept': 'application/json, text/plain, */*',
-                     // Incluimos el encabezado Authorization con el valor encontrado
-                     'Authorization': 'XqPMiwXzTRKHH0mF3gmtPtQt3LNGIuqCTdgaUHINMdmlaFid0x9MzlYTKXPxluYQ', // <-- ¡Valor encontrado!
+                     // Incluimos el encabezado Authorization con el valor de la variable de entorno
+                     'Authorization': andreaniAuthHeader, // <-- ¡Usando variable de entorno!
                      'Origin': 'https://www.andreani.com', // Incluimos Origin
                      'Referer': 'https://www.andreani.com/', // Incluimos Referer (adaptado a la página principal de seguimiento si es necesario)
                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36', // Mantener un User-Agent común
