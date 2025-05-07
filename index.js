@@ -8,13 +8,18 @@ import {
     GatewayIntentBits,
     ModalBuilder,       // Para construir el modal
     TextInputBuilder,   // Para construir campos de texto en el modal
-    ActionRowBuilder    // Para organizar componentes en el modal
+    ActionRowBuilder,    // Para organizar componentes en el modal
+    ApplicationCommandOptionType // Importar ApplicationCommandOptionType para obtener opciones de comandos
 } from 'discord.js';
 
 // Importaciones de Google APIs y utilidades
 import { google } from 'googleapis'; // Librería oficial de Google
 import path from 'path';              // Módulo nativo para manejo de rutas
 import fetch from 'node-fetch';       // Para descargar archivos adjuntos desde URL (Importación estándar ESM)
+
+// Importar librería para parsear HTML (necesaria para leer la página de tracking)
+// Si no la tienes instalada, necesitarás ejecutar: npm install cheerio
+import * as cheerio from 'cheerio';
 
 
 // --- Configuración del Cliente de Discord ---
@@ -270,6 +275,141 @@ client.on('interactionCreate', async interaction => {
                 // Si falló el modal, nos aseguramos de que el usuario no quede en un estado de espera (aunque no debería estarlo aún)
                 waitingForAttachments.delete(interaction.user.id);
             }
+        } else if (interaction.commandName === 'tracking') { // --- NUEVO MANEJADOR PARA /tracking ---
+             console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+
+             // Deferir la respuesta inmediatamente, ya que la consulta a la página puede tardar.
+             await interaction.deferReply({ ephemeral: false }); // Puedes hacerlo efímero si prefieres que solo el usuario vea el resultado
+
+             // Obtener el número de tracking de la opción del comando
+             const trackingNumber = interaction.options.getString('numero');
+             console.log(`Número de tracking recibido: ${trackingNumber}`);
+
+             if (!trackingNumber) {
+                 await interaction.editReply({ content: '❌ Debes proporcionar un número de seguimiento.', ephemeral: true });
+                 return;
+             }
+
+             // --- Lógica para consultar el tracking en Andreani ---
+             let trackingInfo = null; // Variable para guardar la información extraída
+             const andreaniBaseUrl = 'https://www.andreani.com'; // URL base del sitio
+             const trackingPageUrl = 'https://seguimiento.andreani.com/'; // URL de la página de seguimiento donde encontrar el ID dinámico
+
+             try {
+                 console.log(`Paso 1: Obteniendo el ID dinámico de la página de seguimiento...`);
+                 // 1. Obtener el HTML de la página de seguimiento para encontrar el ID dinámico
+                 const trackingPageResponse = await fetch(trackingPageUrl);
+                 if (!trackingPageResponse.ok) {
+                     throw new Error(`Error HTTP al obtener la página de seguimiento: ${trackingPageResponse.status} ${trackingPageResponse.statusText}`);
+                 }
+                 const trackingPageHtml = await trackingPageResponse.text();
+                 const $page = cheerio.load(trackingPageHtml);
+
+                 // Intentar encontrar el ID dinámico. Es común en un script tag con id="__NEXT_DATA__"
+                 const nextDataScript = $page('script#__NEXT_DATA__');
+                 let buildId = null;
+
+                 if (nextDataScript.length > 0) {
+                     try {
+                         const nextData = JSON.parse(nextDataScript.html());
+                         buildId = nextData.buildId;
+                         console.log(`ID dinámico encontrado: ${buildId}`);
+                     } catch (parseError) {
+                         console.error("Error al parsear __NEXT_DATA__:", parseError);
+                         // Si no se puede parsear, intentar otro método o lanzar error
+                         throw new Error("No se pudo obtener el ID dinámico del sitio de Andreani.");
+                     }
+                 } else {
+                      // Si el script __NEXT_DATA__ no está, podrías intentar buscar en URLs de assets (CSS, JS)
+                      // Esto es más complejo y varía, por ahora lanzamos un error si no encontramos el script
+                      throw new Error("No se encontró el script __NEXT_DATA__ para obtener el ID dinámico.");
+                 }
+
+                 if (!buildId) {
+                     throw new Error("No se pudo obtener el ID dinámico del sitio de Andreani (buildId es null).");
+                 }
+
+
+                 console.log(`Paso 2: Construyendo la URL de la API de datos con el ID dinámico.`);
+                 // 2. Construir la URL de la API de datos usando el ID dinámico y el número de tracking
+                 // La URL de la API de datos tiene la estructura mostrada en la captura:
+                 // https://www.andreani.com/_next/data/[buildId]/envio/[trackingNumber].json?trackingNumber=[trackingNumber]
+                 const andreaniApiUrl = `${andreaniBaseUrl}/_next/data/${buildId}/envio/${trackingNumber}.json?trackingNumber=${trackingNumber}`;
+                 console.log(`URL de la API construida: ${andreaniApiUrl}`);
+
+
+                 console.log(`Paso 3: Haciendo la solicitud GET a la URL de la API y parseando la respuesta.`);
+                 // 3. Hacer la solicitud GET a la URL de la API de datos
+                 const apiResponse = await fetch(andreaniApiUrl);
+
+                 // La API puede devolver 404 si el tracking no existe o 200 con HTML si existe
+                 if (apiResponse.status === 404) {
+                     trackingInfo = `📦 No se encontró información para el número de seguimiento **${trackingNumber}**. Verifica que el número sea correcto.`;
+                     console.log(`Consulta API devolvió 404 para ${trackingNumber}.`);
+
+                 } else if (!apiResponse.ok) {
+                     // Otros errores HTTP
+                     throw new Error(`Error HTTP al consultar la API de Andreani: ${apiResponse.status} ${apiResponse.statusText}`);
+
+                 } else {
+                     // La respuesta es 200 OK, ahora leemos el cuerpo (que es HTML según la captura)
+                     console.log(`Consulta API devolvió 200 OK. Leyendo y parseando HTML...`);
+                     const apiHtml = await apiResponse.text();
+                     const $api = cheerio.load(apiHtml);
+
+                     // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
+                     // ESTA ES LA PARTE QUE DEBES ADAPTAR.
+                     // Necesitas inspeccionar el HTML que devuelve la URL de la API (la que termina en .json)
+                     // cuando buscas un tracking válido para encontrar los selectores CSS
+                     // (clases, IDs, estructura) que contienen el estado, los eventos, etc.
+
+                     // --- Selectores CSS tentativos basados en el HTML proporcionado ---
+                     // Busca un elemento que contenga el estado principal. Podría ser un h2 o p dentro de una sección.
+                     const estadoEnvioElement = $api('h2'); // <<< Selector tentativo: Busca todos los h2 y toma el primero
+                     const estadoEnvio = estadoEnvioElement.first().text().trim(); // Tomamos el texto del primer h2 encontrado
+
+                     let eventosEnvio = '';
+                     // Busca la lista de eventos. Podría ser un ul o ol.
+                     const eventosList = $api('ul'); // <<< Selector tentativo: Busca todos los ul y toma el primero
+                     if (eventosList.length > 0) {
+                         eventosEnvio = '\n\nHistorial:';
+                         // Busca los elementos de lista (li) dentro de la lista encontrada
+                         $api('li', eventosList.first()).each((index, element) => { // Busca li dentro del primer ul
+                             // Dentro de cada li, busca elementos que contengan la fecha/hora y descripción.
+                             // Esto es muy tentativo y DEBE SER VERIFICADO en el Inspector de Elementos.
+                             const fechaHora = $api(element).find('span:first-child').text().trim(); // <<< Selector tentativo: primer span dentro del li
+                             const descripcion = $api(element).find('span:last-child').text().trim(); // <<< Selector tentativo: último span dentro del li
+                             if (fechaHora || descripcion) { // Solo agrega si hay contenido
+                                 eventosEnvio += `\n- ${fechaHora}: ${descripcion}`;
+                             }
+                         });
+                     } else {
+                         eventosEnvio = '\n\nSin historial de eventos disponible.';
+                     }
+
+                     // --- FIN Selectores CSS tentativos ---
+
+
+                     if (estadoEnvio) {
+                         trackingInfo = `📦 Estado del tracking **${trackingNumber}**:\n${estadoEnvio}${eventosEnvio}`;
+                         console.log(`Información de tracking extraída: ${trackingInfo}`);
+                     } else {
+                         // Si no se pudo extraer el estado, quizás la estructura HTML cambió o el tracking no es válido a pesar del 200
+                         trackingInfo = `😕 No se pudo encontrar la información de estado en la página de resultados para el número **${trackingNumber}**. La estructura de la página podría haber cambiado o el tracking no es válido.`;
+                         console.log(`No se pudo extraer información para ${trackingNumber} (estadoEnvio vacío).`);
+                     }
+                 }
+
+
+             } catch (error) {
+                 console.error('Error al consultar el tracking en Andreani:', error);
+                 trackingInfo = `❌ Hubo un error al consultar el estado del tracking para **${trackingNumber}**. Detalles: ${error.message}`;
+             }
+
+             // --- Responder al usuario con la información del tracking ---
+             await interaction.editReply({ content: trackingInfo, ephemeral: false }); // ephemeral: false para que todos vean el resultado
+             console.log('Respuesta de tracking enviada.');
+
         } else {
             // Manejar otros comandos de barra si los tienes
             // console.log(`Comando desconocido: ${interaction.commandName}`);
@@ -297,19 +437,23 @@ client.on('interactionCreate', async interaction => {
              const caso = interaction.fields.getTextInputValue('casoInput');
              const email = interaction.fields.getTextInputValue('emailInput');
              // Recuperamos la descripción si está en el modal (aunque no la guardemos en Sheet)
-             const observaciones = interaction.fields.getTextInputValue('observacionesInput');
+             const descripcion = interaction.fields.getTextInputValue('descripcionInput');
 
-             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${observaciones}`);
+             console.log(`Datos del modal - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
 
 
              // Obtener la fecha y hora actual del sistema del bot
              const fechaHoraActual = new Date();
              // Formatear la fecha y hora. Ajusta 'es-AR' si prefieres otro locale o formato.
              const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
-                 year: 'numeric', month: '2-digit', day: '2-digit',
-                 hour: '2-digit', minute: '2-digit', second: '2-digit',
+                 year: 'numeric',
+                 month: '2-digit',
+                 day: '2-digit',
+                 hour: '2-digit',
+                 minute: '2-digit',
+                 second: '2-digit',
                  hour12: false, // Formato 24 horas
-                 timeZone: 'America/Argentina/Buenos_Aires' 
+                 timeZone: 'America/Argentina/Buenos_Aires' // <-- CORRECCIÓN: Especificar la zona horaria
              }).replace(/\//g, '-'); // Reemplazar '/' con '-' para el formato DD-MM-YYYY
 
 
@@ -322,10 +466,9 @@ client.on('interactionCreate', async interaction => {
              // NO INCLUIMOS DESCRIPCIÓN SI TU HOJA TIENE SOLO 4 COLUMNAS
              const rowData = [
                  pedido,              // Datos del modal
-                 fechaHoraFormateada, // Fecha/Hora del sistema
+                 fechaHoraFormateada, // Fecha/Hora del sistema (ahora con zona horaria especificada)
                  `#${caso}`,          // Datos del modal (con # añadido si lo deseas)
-                 email,               // Datos del modal
-                 observaciones
+                 email               // Datos del modal
              ];
 
              console.log('Datos a escribir en Sheet:', rowData);
@@ -342,7 +485,7 @@ client.on('interactionCreate', async interaction => {
                       await sheets.spreadsheets.values.append({
                           spreadsheetId: spreadsheetId,
                           range: sheetRange,
-                          valueInputOption: 'RAW', // Deja que Google interprete los datos
+                          valueInputOption: 'RAW', // Usar 'RAW' para texto plano
                           insertDataOption: 'INSERT_ROWS', // Agrega una nueva fila
                           resource: { values: [rowData] }, // rowData ahora tiene 4 elementos
                       });
@@ -470,9 +613,9 @@ function buildSolicitudModal() {
         .setRequired(true);
 
     // Campo para Descripción (Mantenemos en el modal, pero no se guarda en Sheet)
-    const observacionesInput = new TextInputBuilder()
-        .setCustomId('observacionesInput') // ID único para este campo
-        .setLabel("Observasiones de la solicitud")
+    const descripcionInput = new TextInputBuilder()
+        .setCustomId('descripcionInput') // ID único para este campo
+        .setLabel("Detalle de la Solicitud")
         .setStyle('Paragraph') // Estilo de campo: multi-línea
         .setRequired(false); // Puede que no siempre sea necesaria
 
@@ -481,7 +624,7 @@ function buildSolicitudModal() {
     const firstRow = new ActionRowBuilder().addComponents(pedidoInput);
     const secondRow = new ActionRowBuilder().addComponents(casoInput);
     const thirdRow = new ActionRowBuilder().addComponents(emailInput);
-    const fourthRow = new ActionRowBuilder().addComponents(observacionesInput); // Fila para la descripción
+    const fourthRow = new ActionRowBuilder().addComponents(descripcionInput); // Fila para la descripción
 
     // Añadir las filas de componentes al modal
     // Asegúrate que el número de addComponents coincide con las filas que has definido.
