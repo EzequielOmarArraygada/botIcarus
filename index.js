@@ -9,7 +9,7 @@ import {
     ModalBuilder,       // Para construir el modal
     TextInputBuilder,   // Para construir campos de texto en el modal
     ActionRowBuilder,    // Para organizar componentes en el modal
-    ApplicationCommandOptionType // Importar ApplicationCommandOptionType para obtener opciones de comandos
+    ApplicationCommandOptionType // Importar ApplicationCommandOptionOptionType para obtener opciones de comandos
 } from 'discord.js';
 
 // Importaciones de Google APIs y utilidades
@@ -17,9 +17,8 @@ import { google } from 'googleapis'; // Librería oficial de Google
 import path from 'path';              // Módulo nativo para manejo de rutas
 import fetch from 'node-fetch';       // Para descargar archivos adjuntos desde URL (Importación estándar ESM)
 
-// Importar librería para parsear HTML (necesaria para leer la página de tracking)
-// Si no la tienes instalada, necesitarás ejecutar: npm install cheerio
-import * as cheerio from 'cheerio';
+// No necesitamos cheerio para el tracking de Andreani ya que la API devuelve JSON
+// import * as cheerio from 'cheerio';
 
 
 // --- Configuración del Cliente de Discord ---
@@ -275,10 +274,10 @@ client.on('interactionCreate', async interaction => {
                 // Si falló el modal, nos aseguramos de que el usuario no quede en un estado de espera (aunque no debería estarlo aún)
                 waitingForAttachments.delete(interaction.user.id);
             }
-        } else if (interaction.commandName === 'tracking') { // --- NUEVO MANEJADOR PARA /tracking ---
+        } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
              console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-             // Deferir la respuesta inmediatamente, ya que la consulta a la página puede tardar.
+             // Deferir la respuesta inmediatamente, ya que la consulta a la API puede tardar.
              await interaction.deferReply({ ephemeral: false }); // Puedes hacerlo efímero si prefieres que solo el usuario vea el resultado
 
              // Obtener el número de tracking de la opción del comando
@@ -290,162 +289,103 @@ client.on('interactionCreate', async interaction => {
                  return;
              }
 
-             // --- Lógica para consultar el tracking en Andreani ---
+             // --- Lógica para consultar el tracking en Andreani usando la API JSON ---
              let trackingInfo = null; // Variable para guardar la información extraída
-             const andreaniBaseUrl = 'https://www.andreani.com'; // URL base del sitio
-             const trackingPageUrl = 'https://seguimiento.andreani.com/'; // URL de la página de seguimiento donde encontrar el ID dinámico
+             // Usamos la URL de la API JSON que encontraste
+             const andreaniApiUrl = `https://tracking-api.andreani.com/api/v1/Tracking?idReceptor=1&idSistema=1&userData=%7B%22mail%22:%22%22%7D&numeroAndreani=${trackingNumber}`;
+             console.log(`Consultando API JSON: ${andreaniApiUrl}`);
 
              try {
-                 console.log(`Paso 1: Obteniendo el ID dinámico de la página de seguimiento...`);
-                 // 1. Obtener el HTML de la página de seguimiento para encontrar el ID dinámico
-                 const trackingPageResponse = await fetch(trackingPageUrl);
-                 if (!trackingPageResponse.ok) {
-                     throw new Error(`Error HTTP al obtener la página de seguimiento: ${trackingPageResponse.status} ${trackingPageResponse.statusText}`);
-                 }
-                 const trackingPageHtml = await trackingPageResponse.text();
-                 const $page = cheerio.load(trackingPageHtml);
-
-                 // Intentar encontrar el ID dinámico. Es común en un script tag con id="__NEXT_DATA__"
-                 const nextDataScript = $page('script#__NEXT_DATA__');
-                 let buildId = null;
-
-                 if (nextDataScript.length > 0) {
-                     try {
-                         const nextData = JSON.parse(nextDataScript.html());
-                         buildId = nextData.buildId;
-                         console.log(`ID dinámico encontrado: ${buildId}`);
-                     } catch (parseError) {
-                         console.error("Error al parsear __NEXT_DATA__:", parseError);
-                         // Si no se puede parsear, intentar otro método o lanzar error
-                         throw new Error("No se pudo obtener el ID dinámico del sitio de Andreani.");
-                     }
-                 } else {
-                      // Si el script __NEXT_DATA__ no está, podrías intentar buscar en URLs de assets (CSS, JS)
-                      // Esto es más complejo y varía, por ahora lanzamos un error si no encontramos el script
-                      throw new Error("No se encontró el script __NEXT_DATA__ para obtener el ID dinámico.");
-                 }
-
-                 if (!buildId) {
-                     throw new Error("No se pudo obtener el ID dinámico del sitio de Andreani (buildId es null).");
-                 }
-
-
-                 console.log(`Paso 2: Construyendo la URL de la API de datos con el ID dinámico.`);
-                 // 2. Construir la URL de la API de datos usando el ID dinámico y el número de tracking
-                 // La URL de la API de datos tiene la estructura mostrada en la captura:
-                 // https://www.andreani.com/_next/data/[buildId]/envio/[trackingNumber].json?trackingNumber=[trackingNumber]
-                 const andreaniApiUrl = `${andreaniBaseUrl}/_next/data/${buildId}/envio/${trackingNumber}.json?trackingNumber=${trackingNumber}`;
-                 console.log(`URL de la API construida: ${andreaniApiUrl}`);
-
-
-                 console.log(`Paso 3: Haciendo la solicitud GET a la URL de la API y parseando la respuesta.`);
-                 // 3. Hacer la solicitud GET a la URL de la API de datos
                  const apiResponse = await fetch(andreaniApiUrl);
 
-                 // La API puede devolver 404 si el tracking no existe o 200 con HTML si existe
-                 if (apiResponse.status === 404) {
-                     trackingInfo = `📦 No se encontró información para el número de seguimiento **${trackingNumber}**. Verifica que el número sea correcto.`;
-                     console.log(`Consulta API devolvió 404 para ${trackingNumber}.`);
-
-                 } else if (!apiResponse.ok) {
-                     // Otros errores HTTP
+                 if (!apiResponse.ok) {
+                     // Si la respuesta HTTP no es 2xx, lanzar un error
                      throw new Error(`Error HTTP al consultar la API de Andreani: ${apiResponse.status} ${apiResponse.statusText}`);
+                 }
 
-                 } else {
-                     // La respuesta es 200 OK, ahora leemos el cuerpo (que es HTML según la captura)
-                     console.log(`Consulta API devolvió 200 OK. Leyendo y parseando HTML...`);
-                     const apiHtml = await apiResponse.text();
+                 // Parsear la respuesta como JSON
+                 const trackingData = await apiResponse.json();
+                 console.log("Respuesta de la API JSON recibida y parseada.");
+                 // console.log(JSON.stringify(trackingData, null, 2)); // Opcional: log completo del JSON
 
-                     // --- DEBUGGING: Imprimir el HTML recibido para inspección ---
-                     console.log("--- HTML recibido de la API de Andreani ---");
-                     console.log(apiHtml);
-                     console.log("--- Fin HTML recibido ---");
-                     // --- FIN DEBUGGING ---
+                 // --- Extraer la información del JSON ---
+                 const procesoActual = trackingData.procesoActual;
+                 const fechaEstimadaDeEntrega = trackingData.fechaEstimadaDeEntrega;
+                 const timelines = trackingData.timelines;
+                 const numeroAndreani = trackingData.numeroAndreani; // Asegurarnos de usar el número del JSON por si acaso
 
+                 if (procesoActual && procesoActual.titulo) {
+                     trackingInfo = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n`;
+                     trackingInfo += `${procesoActual.titulo}`;
 
-                     const $api = cheerio.load(apiHtml);
-
-                     // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
-                     // Intentaremos usar selectores basados en data-testid y clases para mayor robustez.
-
-                     // Selector para el estado principal del pedido usando data-testid
-                     const estadoEnvioElement = $api('p[data-testid="tracking-state"]');
-                     let estadoEnvio = estadoEnvioElement.text().trim();
-
-                     // Si no encontramos el estado principal con data-testid, intentamos con la clase anterior
-                     if (!estadoEnvio) {
-                          const fallbackEstadoElement = $api('div.TrackingStatus_styles__status__wX2rQ');
-                          estadoEnvio = fallbackEstadoElement.text().trim();
+                     // Añadir detalle de fecha si está disponible
+                     if (fechaEstimadaDeEntrega) {
+                          // Limpiar etiquetas HTML básicas como <b> y <br> del texto
+                          const cleanFechaDetalle = fechaEstimadaDeEntrega.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '');
+                          trackingInfo += ` - ${cleanFechaDetalle}`;
                      }
 
+                     // Añadir historial de eventos si está disponible
+                     if (timelines && timelines.length > 0) {
+                         trackingInfo += '\n\nHistorial:';
+                         // Iterar sobre cada timeline (cada etapa principal)
+                         for (const timeline of timelines) {
+                             if (timeline.traducciones && timeline.traducciones.length > 0) {
+                                 // Iterar sobre cada traducción/evento dentro de la etapa
+                                 for (const evento of timeline.traducciones) {
+                                     const fechaHora = evento.fechaEvento ? new Date(evento.fechaEvento).toLocaleString('es-AR', {
+                                         year: 'numeric',
+                                         month: '2-digit',
+                                         day: '2-digit',
+                                         hour: '2-digit',
+                                         minute: '2-digit',
+                                         hour12: false,
+                                         timeZone: 'America/Argentina/Buenos_Aires'
+                                     }).replace(/\//g, '-') : '';
+                                     // Limpiar etiquetas HTML básicas de la traducción
+                                     const traduccionLimpia = evento.traduccion.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '').replace(/<\/?p>/g, '').replace(/<\/?div>/g, '').replace(/<\/?q>/g, '').replace(/<\/?a.*?>/g, '').replace(/<\/?span>/g, '').trim();
+                                     const sucursal = evento.sucursal && evento.sucursal.nombre ? ` (${evento.sucursal.nombre})` : '';
 
-                     // Selector para el detalle del estado (como la fecha de entrega)
-                     const detalleEstadoElement = $api('div.TopComponent_styles__fechaEstimada_DLMYI');
-                     const detalleEstado = detalleEstadoElement.text().trim();
-
-                     let eventosEnvio = '';
-                     // Selector para el contenedor principal de la línea de tiempo de eventos usando data-testid
-                     const eventosContainer = $api('div[data-testid="tracking-dropdwon"]');
-
-                     if (eventosContainer.length > 0) {
-                         eventosEnvio = '\n\nHistorial:';
-                         // Iterar sobre cada item de la línea de tiempo usando data-testid
-                         $api('li[data-testid="vertical-timeline-item"]').each((index, element) => {
-                             // Dentro de cada item, extraemos fecha, hora y descripción usando clases
-                             const fecha = $api(element).find('p.VerticalTimelineItem_styles__date_kQNcb').text().trim();
-                             const hora = $api(element).find('p.VerticalTimelineItem_styles__time_A03zq').text().trim();
-                             const descripcion = $api(element).find('p.VerticalTimelineItem_styles__description__60Qj').text().trim();
-
-                             if (fecha || hora || descripcion) { // Solo agrega si hay contenido
-                                 eventosEnvio += `\n- ${fecha} ${hora}: ${descripcion}`;
+                                     if (fechaHora || traduccionLimpia) {
+                                         trackingInfo += `\n- ${fechaHora}: ${traduccionLimpia}${sucursal}`;
+                                     }
+                                 }
+                             } else if (timeline.titulo) {
+                                 // Si no hay traducciones detalladas, al menos mostrar el título de la etapa
+                                 const fechaUltimoEvento = timeline.fechaUltimoEvento ? new Date(timeline.fechaUltimoEvento).toLocaleString('es-AR', {
+                                     year: 'numeric',
+                                     month: '2-digit',
+                                     day: '2-digit',
+                                     hour: '2-digit',
+                                     minute: '2-digit',
+                                     hour12: false,
+                                     timeZone: 'America/Argentina/Buenos_Aires'
+                                 }).replace(/\//g, '-') : '';
+                                 trackingInfo += `\n- ${fechaUltimoEvento}: ${timeline.titulo}`;
                              }
-                         });
-
-                         // Fallback si los items con data-testid="vertical-timeline-item" no funcionan,
-                         // intentamos con la clase li.VerticalTimelineItem_styles__item_L08iB directamente.
-                         if (eventosEnvio === '\n\nHistorial:') {
-                             console.log("Intentando selectores de historial de fallback...");
-                             $api('li.VerticalTimelineItem_styles__item_L08iB').each((index, element) => {
-                                 const fecha = $api(element).find('p.VerticalTimelineItem_styles__date_kQNcb').text().trim();
-                                 const hora = $api(element).find('p.VerticalTimelineItem_styles__time_A03zq').text().trim();
-                                 const descripcion = $api(element).find('p.VerticalTimelineItem_styles__description__60Qj').text().trim();
-
-                                  if (fecha || hora || descripcion) { // Solo agrega si hay contenido
-                                      eventosEnvio += `\n- ${fecha} ${hora}: ${descripcion}`;
-                                  }
-                             });
                          }
 
-
-                         if (eventosEnvio === '\n\nHistorial:') { // Si después de fallbacks no hay eventos
-                              eventosEnvio += '\nSin historial de eventos detallado disponible.';
+                         if (trackingInfo === `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n${procesoActual.titulo}` + (fechaEstimadaDeEntrega ? ` - ${fechaEstimadaDeEntrega.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '')}` : '') + '\n\nHistorial:') {
+                             // Si después de iterar no se añadió ningún evento al historial
+                              trackingInfo += '\nSin historial de eventos detallado disponible.';
                          }
 
 
                      } else {
-                         eventosEnvio = '\n\nSin historial de eventos disponible.';
+                         trackingInfo += '\n\nSin historial de eventos disponible.';
                      }
 
-                     // --- FIN DE LA SECCIÓN DE PARSEO - SELECTORES AJUSTADOS CON data-testid ---
+                     console.log(`Información de tracking extraída y formateada.`);
 
-                     // Combinar el estado principal y el detalle del estado si ambos existen
-                     if (estadoEnvio && detalleEstado) {
-                         trackingInfo = `📦 Estado del tracking **${trackingNumber}**:\n${estadoEnvio} - ${detalleEstado}${eventosEnvio}`;
-                         console.log(`Información de tracking extraída: ${trackingInfo}`);
-                     } else if (estadoEnvio) {
-                          trackingInfo = `📦 Estado del tracking **${trackingNumber}**:\n${estadoEnvio}${eventosEnvio}`;
-                          console.log(`Información de tracking extraída: ${trackingInfo}`);
-                     }
-                      else {
-                         // Si no se pudo extraer el estado principal
-                         trackingInfo = `😕 No se pudo encontrar la información de estado en la página de resultados para el número **${trackingNumber}**. La estructura de la página podría haber cambiado o el tracking no es válido.`;
-                         console.log(`No se pudo extraer información para ${trackingNumber} (estadoEnvio vacío).`);
-                     }
+                 } else {
+                     // Si no se pudo extraer el estado principal del JSON
+                     trackingInfo = `😕 No se pudo encontrar la información de estado en la respuesta de la API para el número **${trackingNumber}**. La estructura de la respuesta podría haber cambiado o el tracking no es válido.`;
+                     console.log(`No se pudo extraer información de tracking del JSON para ${trackingNumber}.`);
                  }
 
 
              } catch (error) {
-                 console.error('Error al consultar el tracking en Andreani:', error);
+                 console.error('Error al consultar la API de tracking de Andreani:', error);
                  trackingInfo = `❌ Hubo un error al consultar el estado del tracking para **${trackingNumber}**. Detalles: ${error.message}`;
              }
 
@@ -613,7 +553,7 @@ client.on('interactionCreate', async interaction => {
              // Si la sumisión es de otro modal que no manejamos
              // console.log(`Submisión de modal desconocida con customId: ${interaction.customId}`);
              // if (!interaction.replied && !interaction.deferred) {
-             //      await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
+             //      await interaction.reply({ content: 'Submisión de modal desconocida.', ephemeral: true });
              // }
         }
     }
