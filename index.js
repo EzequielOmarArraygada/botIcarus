@@ -209,8 +209,8 @@ client.on('messageCreate', async message => {
                  if (error.response.data.error && error.response.data.error.message) {
                       errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
                  } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
-                      // A veces el mensaje está dentro de un array 'errors'
-                       errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                           // A veces el mensaje está dentro de un array 'errors'
+                           errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
                  } else {
                       // Si no encontramos un mensaje estructurado, mostramos el status y statusText
                       errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
@@ -358,49 +358,57 @@ client.on('interactionCreate', async interaction => {
                      const $api = cheerio.load(apiHtml);
 
                      // --- PARSEAR EL HTML DE LA RESPUESTA PARA EXTRAER LA INFORMACIÓN ---
-                     // Basándome en la estructura visible en la captura y el HTML proporcionado,
-                     // intentaré usar selectores que apunten a los elementos comunes de estado y lista de eventos.
-                     // ES POSIBLE QUE NECESITES AJUSTAR ESTOS SELECTORES SI LA ESTRUCTURA VARÍA.
+                     // Usando los fragmentos de HTML proporcionados para identificar los selectores exactos.
 
-                     // Selector para el estado principal. Buscamos un h2 dentro del contenedor principal de tracking.
-                     // Clases observadas en la captura: Tracking styles_page_0d9f
-                     // REEMPLAZA '.Tracking.styles_page_0d9f h2' con el selector CSS correcto para el estado principal.
-                     const estadoEnvioElement = $api('.Tracking.styles_page_0d9f h2');
-                     const estadoEnvio = estadoEnvioElement.first().text().trim(); // Tomamos el texto del primer h2 encontrado dentro de ese contenedor
+                     // Selector para el estado principal del pedido
+                     const estadoEnvioElement = $api('p[data-testid="tracking-state"]');
+                     const estadoEnvio = estadoEnvioElement.text().trim();
+
+                     // Selector para el detalle del estado (como la fecha de entrega)
+                     const detalleEstadoElement = $api('.TopComponent_styles__fechaEstimada_DLMYI');
+                     const detalleEstado = detalleEstadoElement.text().trim();
 
                      let eventosEnvio = '';
-                     // Selector para la lista de eventos. Buscamos un ul dentro del contenedor principal de tracking.
-                     // REEMPLAZA '.Tracking.styles_page_0d9f ul' con el selector CSS correcto para la lista de eventos.
-                     const eventosList = $api('.Tracking.styles_page_0d9f ul');
-                     if (eventosList.length > 0) {
+                     // Selector para el contenedor principal de la línea de tiempo de eventos
+                     const eventosContainer = $api('div[data-testid="tracking-dropdwon"]');
+
+                     if (eventosContainer.length > 0) {
                          eventosEnvio = '\n\nHistorial:';
-                         // Selector para cada elemento de la lista de eventos (li).
-                         // Buscamos los li dentro del ul encontrado.
-                         // REEMPLAZA 'li' con el selector CSS correcto para cada evento dentro de la lista.
-                         $api('li', eventosList.first()).each((index, element) => {
-                             // Dentro de cada li, buscamos los elementos que contienen la fecha/hora y descripción.
-                             // Basado en patrones comunes, podrían ser spans, divs, etc.
-                             // Intentaremos con spans dentro del li.
-                             // REEMPLAZA 'span:first-child' y 'span:last-child' con los selectores correctos
-                             // para la fecha/hora y la descripción dentro de cada evento (li).
-                             const fechaHora = $api(element).find('span:first-child').text().trim();
-                             const descripcion = $api(element).find('span:last-child').text().trim();
-                             if (fechaHora || descripcion) { // Solo agrega si hay contenido
-                                 eventosEnvio += `\n- ${fechaHora}: ${descripcion}`;
-                             }
+                         // Iterar sobre cada lista de eventos (cada ul con data-testid="vertical-timeline-item")
+                         eventosContainer.find('ul[data-testid="vertical-timeline-item"]').each((ulIndex, ulElement) => {
+                             // Iterar sobre cada evento individual (li) dentro de la lista actual
+                             $api('li.VerticalTimelineItem_styles__item_L08iB', ulElement).each((liIndex, liElement) => {
+                                 // Extraer fecha, hora y descripción usando los selectores identificados
+                                 const fecha = $api(liElement).find('.VerticalTimelineItem_styles__date_kQNcb').text().trim();
+                                 const hora = $api(liElement).find('.VerticalTimelineItem_styles__time_A03zq').text().trim();
+                                 const descripcion = $api(liElement).find('.VerticalTimelineItem_styles__description__60Qj').text().trim();
+
+                                 if (fecha || hora || descripcion) { // Solo agrega si hay contenido
+                                     eventosEnvio += `\n- ${fecha} ${hora}: ${descripcion}`;
+                                 }
+                             });
                          });
+
+                         if (eventosEnvio === '\n\nHistorial:') { // Si no se encontraron eventos individuales
+                              eventosEnvio += '\nSin historial de eventos detallado disponible.';
+                         }
+
                      } else {
                          eventosEnvio = '\n\nSin historial de eventos disponible.';
                      }
 
-                     // --- FIN DE LA SECCIÓN DE PARSEO - SELECTORES AJUSTADOS TENTATIVAMENTE ---
+                     // --- FIN DE LA SECCIÓN DE PARSEO - SELECTORES AJUSTADOS ---
 
-
-                     if (estadoEnvio) {
-                         trackingInfo = `📦 Estado del tracking **${trackingNumber}**:\n${estadoEnvio}${eventosEnvio}`;
+                     // Combinar el estado principal y el detalle del estado si ambos existen
+                     if (estadoEnvio && detalleEstado) {
+                         trackingInfo = `📦 Estado del tracking **${trackingNumber}**:\n${estadoEnvio} - ${detalleEstado}${eventosEnvio}`;
                          console.log(`Información de tracking extraída: ${trackingInfo}`);
-                     } else {
-                         // Si no se pudo extraer el estado, quizás la estructura HTML cambió o el tracking no es válido a pesar del 200
+                     } else if (estadoEnvio) {
+                          trackingInfo = `📦 Estado del tracking **${trackingNumber}**:\n${estadoEnvio}${eventosEnvio}`;
+                          console.log(`Información de tracking extraída: ${trackingInfo}`);
+                     }
+                      else {
+                         // Si no se pudo extraer el estado principal
                          trackingInfo = `😕 No se pudo encontrar la información de estado en la página de resultados para el número **${trackingNumber}**. La estructura de la página podría haber cambiado o el tracking no es válido.`;
                          console.log(`No se pudo extraer información para ${trackingNumber} (estadoEnvio vacío).`);
                      }
@@ -576,7 +584,7 @@ client.on('interactionCreate', async interaction => {
              // Si la sumisión es de otro modal que no manejamos
              // console.log(`Submisión de modal desconocida con customId: ${interaction.customId}`);
              // if (!interaction.replied && !interaction.deferred) {
-             //      await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
+             //      await interaction.reply({ content: 'Submisión de modal desconocida.', ephemeral: true });
              // }
         }
     }
@@ -643,7 +651,7 @@ function buildSolicitudModal() {
 /**
  * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
  * Si no existe, la crea.
- * @param {object} drive - Instancia de la API de Google Drive.
+ * @param {object} drive - Instancia de la API de Google Drive (obtenida de google.drive()).
  * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
  * @param {string} folderName - Nombre de la carpeta a buscar/crear.
  * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
