@@ -323,7 +323,8 @@ client.on('interactionCreate', async interaction => {
                  pedido,              // Datos del modal
                  fechaHoraFormateada, // Fecha/Hora del sistema
                  `#${caso}`,          // Datos del modal (con # añadido si lo deseas)
-                 email               // Datos del modal
+                 email,               // Datos del modal
+                 observaciones
              ];
 
              console.log('Datos a escribir en Sheet:', rowData);
