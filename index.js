@@ -142,10 +142,10 @@ const userPendingData = new Map();
 const notifiedErrorRows = new Set();
 
 // NUEVA VARIABLE: Intervalo de tiempo entre verificaciones de errores en la hoja (en milisegundos)
-const ERROR_CHECK_INTERVAL = process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000; // Default: 5 minutos (300000 ms)
+let ERROR_CHECK_INTERVAL = process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000; // Default: 5 minutos (300000 ms)
 if (isNaN(ERROR_CHECK_INTERVAL) || ERROR_CHECK_INTERVAL < 10000) { // Mínimo 10 segundos
     console.warn(`ERROR_CHECK_INTERVAL_MS configurado incorrectamente o muy bajo (${process.env.ERROR_CHECK_INTERVAL_MS}). Usando valor por defecto: ${ERROR_CHECK_INTERVAL} ms.`);
-    ERROR_CHECK_INTERVAL = 300000; // Reset a 5 minutos si es inválido
+    ERROR_CHECK_INTERVAL = 300000; // Reset a 5 minutos if es inválido
 }
 
 
@@ -216,7 +216,7 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
         }
 
         // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar"
-        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLowerLower.includes('agregar')) {
+        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar')) {
             // --- EXPLICACIÓN ACTUALIZADA PARA /agregar-caso ---
             const helpMessage = `
 Para usar el comando **/agregar-caso**:
@@ -1050,7 +1050,7 @@ async function checkSheetForErrors() {
                     // Col J: ERROR (índice 9) - ya lo tenemos en errorValue
 
                     // --- Intentar encontrar el usuario de Discord por nombre ---
-                    let mention = agenteName; // Por defecto, usar el nombre de la hoja si no encontramos el usuario
+                    let mention = agenteName; // Por defecto, usar el nombre de la hoja si no encontramos al usuario
                     try {
                         // Buscar en los miembros del servidor por displayName o username
                         const foundMember = guild.members.cache.find(member =>
