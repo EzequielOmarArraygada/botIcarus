@@ -9,7 +9,9 @@ import {
     ModalBuilder,       // Para construir el modal
     TextInputBuilder,   // Para construir campos de texto en el modal
     ActionRowBuilder,    // Para organizar componentes en el modal
-    ApplicationCommandOptionType // Importar ApplicationCommandOptionOptionType para obtener opciones de comandos
+    ApplicationCommandOptionType, // Importar ApplicationCommandOptionOptionType
+    StringSelectMenuBuilder, // <-- NUEVO: Para construir Select Menus de texto
+    StringSelectMenuOptionBuilder // <-- NUEVO: Para construir opciones del Select Menu
 } from 'discord.js';
 
 // Importaciones de Google APIs y utilidades
@@ -25,7 +27,7 @@ import fetch from 'node-fetch';       // Para descargar archivos adjuntos desde 
 // Aquí se crea la instancia principal del bot
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos
+        GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos, y para obtener displayName
         GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate
         GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes, incluyendo adjuntos
     ]
@@ -39,7 +41,7 @@ const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor
 // Canales específicos donde se permiten los comandos (usados para la restricción manual)
 const targetChannelIdFacA = process.env.TARGET_CHANNEL_ID_FAC_A; // Canal para /factura-a
 const targetChannelIdEnvios = process.env.TARGET_CHANNEL_ID_ENVIOS; // Canal para /tracking
-const targetChannelIdCasos = process.env.TARGET_CHANNEL_ID_CASOS; // <-- NUEVA VARIABLE: Canal para /agregar-caso
+const targetChannelIdCasos = process.env.TARGET_CHANNEL_ID_CASOS; // Canal para /agregar-caso
 
 const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/explicaciones (si se mantiene)
 
@@ -47,9 +49,9 @@ const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/expl
 // --- Variables de Entorno para IDs de Comandos ---
 // ¡Necesitarás obtener estos IDs después de desplegar los comandos!
 // Configura estas variables de entorno en Railway.
-const commandIdFacturaA = process.env.COMMAND_ID_FACTURA_A; // <-- RENOMBRADO: ID numérico del comando /factura-a
+const commandIdFacturaA = process.env.COMMAND_ID_FACTURA_A; // ID numérico del comando /factura-a
 const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
-const commandIdRegistrarCaso = process.env.COMMAND_ID_REGISTRAR_CASO; // <-- NUEVA VARIABLE: ID numérico del comando /agregar-caso
+const commandIdAgregarCaso = process.env.COMMAND_ID_AGREGAR_CASO; // <-- VARIABLE ACTUALIZADA: ID numérico del comando /agregar-caso
 
 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH; // Encabezado de autorización para Andreani API
 
@@ -96,10 +98,10 @@ const drive = google.drive({ version: 'v3', auth }); // INSTANCIA DE LA API DE D
 
 // --- Variables de Entorno de Google Adicionales ---
 // Variables para la hoja de Factura A (asumiendo que las originales eran para esto)
-const spreadsheetIdFacA = process.env.GOOGLE_SHEET_ID_FAC_A; // <-- RENOMBRADO
-const sheetRangeFacA = process.env.GOOGLE_SHEET_RANGE_FAC_A; // <-- RENOMBRADO
+const spreadsheetIdFacA = process.env.GOOGLE_SHEET_ID_FAC_A;
+const sheetRangeFacA = process.env.GOOGLE_SHEET_RANGE_FAC_A;
 
-// <-- NUEVAS VARIABLES para la hoja de Casos/Devoluciones
+// Variables para la hoja de Casos/Devoluciones
 const spreadsheetIdCasos = process.env.GOOGLE_SHEET_ID_CASOS;
 const sheetRangeCasos = process.env.GOOGLE_SHEET_RANGE_CASOS;
 
@@ -121,11 +123,22 @@ if (!parentDriveFolderId) {
 
 
 // --- Manejo de Estado para Archivos Adjuntos Posteriores (para Factura A) ---
-// Usaremos un Map para rastrear a los usuarios que han enviado el modal de Factura A
-// y de quienes esperamos archivos adjuntos en el siguiente mensaje.
+// Y para el estado del Modal de Casos (paso 1 de 2)
+// Usaremos un Map para rastrear a los usuarios que han iniciado un flujo multi-paso.
 // Clave: ID del usuario de Discord (string)
-// Valor: Un objeto con información de la solicitud de Factura A, ej: { pedido: '...', timestamp: Date }
-const waitingForAttachments = new Map();
+// Valor: Un objeto con información pendiente.
+// Para Factura A: { type: 'facturaA', pedido: '...', timestamp: Date } -> Esperando adjuntos
+// Para Casos: { type: 'caso', paso: 1, tipoSolicitud: '...' } -> Esperando sumisión del Modal
+const userPendingData = new Map(); // <-- RENOMBRADO
+
+
+// --- Opciones fijas para el tipo de solicitud en Casos ---
+const tipoSolicitudOptions = [
+    { label: "CAMBIO DEFECTUOSO", value: "CAMBIO DEFECTUOSO" },
+    { label: "CAMBIO INCORRECTO", value: "CAMBIO INCORRECTO" },
+    { label: "RETIRO ARREPENTIMIENTO", value: "RETIRO ARREPENTIMIENTO" },
+    { label: "PRODUCTO INCOMPLETO", value: "PRODUCTO INCOMPLETO" },
+];
 
 
 // --- Eventos del Bot de Discord ---
@@ -184,17 +197,17 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
             return; // Salir del listener después de responder
         }
 
-        // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio"
-        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio')) {
+        // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar"
+        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar')) {
             const helpMessage = `
 Para usar el comando **/agregar-caso**:
 
-Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o devolución.
+Este comando inicia el proceso para registrar un nuevo caso de cambio o devolución.
 
 1.  Escribe \`/agregar-caso\` en el canal [menciona el canal si aplica, ej: <#${targetChannelIdCasos || 'ID_CANAL_CASOS'}>].
-2.  Completa los datos solicitados en el formulario que aparecerá (Número de Pedido, Número de Caso, Tipo de Solicitud, Dirección/Teléfono/Datos).
-3.  Para el campo "Tipo de Solicitud", debes escribir una de las siguientes opciones: "CAMBIO DEFECTUOSO", "CAMBIO INCORRECTO", "RETIRO ARREPENTIMIENTO", "PRODUCTO INCOMPLETO".
-4.  Haz clic en "Enviar".
+2.  El bot te enviará un mensaje con un desplegable para que elijas el **Tipo de Solicitud**.
+3.  Después de elegir el tipo, el bot te presentará un formulario (Modal) para completar los demás datos (Número de Pedido, Número de Caso, Dirección/Teléfono/Datos).
+4.  Completa el formulario y haz clic en "Enviar".
 `;
             await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
             return; // Salir del listener después de responder
@@ -218,13 +231,14 @@ Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o
     // Si el mensaje está en el canal de Factura A (o en el canal de ayuda si es el mismo)
     // Y si el usuario está esperando adjuntos (de una solicitud de Factura A) Y el mensaje tiene adjuntos
     const userId = message.author.id;
-    const pendingRequest = waitingForAttachments.get(userId); // Verifica si el usuario está esperando adjuntos de Factura A
+    const pendingData = userPendingData.get(userId); // Usar el mapa renombrado
 
-    if (pendingRequest && message.attachments.size > 0) {
-        console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingRequest.pedido} (Factura A). Procesando...`);
+    // Verificar si el usuario está esperando adjuntos Y si el dato pendiente es de tipo 'facturaA'
+    if (pendingData && pendingData.type === 'facturaA' && message.attachments.size > 0) {
+        console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (Factura A). Procesando...`);
 
         // Eliminar al usuario del estado de espera inmediatamente
-        waitingForAttachments.delete(userId);
+        userPendingData.delete(userId); // Usar el mapa renombrado
 
         // --- Procesar y subir archivos a Google Drive ---
         let driveFolderLink = null; // Para guardar el enlace a la carpeta de Drive
@@ -237,14 +251,14 @@ Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o
                  return; // Salir si no hay carpeta padre configurada
             }
 
-            console.log(`Iniciando subida de ${message.attachments.size} archivos a Google Drive para el pedido ${pendingRequest.pedido}...`);
+            console.log(`Iniciando subida de ${message.attachments.size} archivos a Google Drive para el pedido ${pendingData.pedido}...`);
 
             // Nombre de la carpeta en Drive (usar el número de pedido de la solicitud pendiente de Factura A)
-            const driveFolderName = `FacturaA_Pedido_${pendingRequest.pedido}`.replace(/[\/\\]/g, '_'); // Nombre de carpeta específico para Factura A
+            const driveFolderName = `FacturaA_Pedido_${pendingData.pedido}`.replace(/[\/\\]/g, '_'); // Nombre de carpeta específico para Factura A
 
             // Encontrar o crear la carpeta de destino en Drive
             const folderId = await findOrCreateDriveFolder(drive, parentDriveFolderId, driveFolderName);
-            console.log(`Carpeta de Drive (ID: ${folderId}) encontrada o creada para el pedido ${pendingRequest.pedido}.`);
+            console.log(`Carpeta de Drive (ID: ${folderId}) encontrada o creada para el pedido ${pendingData.pedido}.`);
 
             // Subir cada archivo adjunto a la carpeta encontrada/creada
             const uploadPromises = Array.from(message.attachments.values()).map(attachment =>
@@ -271,7 +285,7 @@ Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o
             }
 
             // --- Responder al usuario con la confirmación de la subida ---
-            let confirmationMessage = `✅ Se ${message.attachments.size === 1 ? 'subió' : 'subieron'} ${message.attachments.size} ${message.attachments.size === 1 ? 'archivo' : 'archivos'} a Google Drive para el Pedido ${pendingRequest.pedido} (Factura A).`;
+            let confirmationMessage = `✅ Se ${message.attachments.size === 1 ? 'subió' : 'subieron'} ${message.attachments.size} ${message.attachments.size === 1 ? 'archivo' : 'archivos'} a Google Drive para el Pedido ${pendingData.pedido} (Factura A).`;
             if (driveFolderLink) {
                  confirmationMessage += `\nCarpeta: ${driveFolderLink}`; // Enlace en nueva línea
             }
@@ -286,7 +300,7 @@ Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o
             console.error('Error durante la subida de archivos a Drive (Factura A):', error);
 
             // Construir un mensaje de error detallado para el usuario
-            let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingRequest.pedido} (Factura A).`;
+            let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingData.pedido} (Factura A).`;
 
             // Intentar extraer mensaje de error de Google API si está disponible
             if (error.response && error.response.data) {
@@ -325,14 +339,14 @@ Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o
 });
 
 
-// --- Manejar Interacciones (Comandos de Barra, Sumisiones de Modals, etc.) ---
+// --- Manejar Interacciones (Comandos de Barra, Sumisiones de Modals, Select Menus, etc.) ---
 client.on('interactionCreate', async interaction => {
     if (interaction.user.bot) return; // Ignorar interacciones de bots
 
     // --- Manejar Comandos de Barra (Slash Commands) ---
     if (interaction.isChatInputCommand()) {
         // Verifica si es el comando "/factura-a"
-        if (interaction.commandName === 'factura-a') { // <-- MANEJADOR RENOMBRADO
+        if (interaction.commandName === 'factura-a') {
              console.log(`Comando /factura-a recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
              // --- Restricción de canal para /factura-a ---
@@ -353,7 +367,7 @@ client.on('interactionCreate', async interaction => {
                 // Si showModal falla, respondemos con un mensaje de error efímero
                 await interaction.reply({ content: 'Hubo un error al abrir el formulario de solicitud de Factura A. Por favor, inténtalo de nuevo.', ephemeral: true });
                 // Si falló el modal, nos aseguramos de que el usuario no quede en un estado de espera (aunque no debería estarlo aún)
-                waitingForAttachments.delete(interaction.user.id);
+                userPendingData.delete(interaction.user.id); // Usar mapa renombrado
             }
         } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
              console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
@@ -520,7 +534,7 @@ client.on('interactionCreate', async interaction => {
              await interaction.editReply({ content: trackingInfo, ephemeral: false }); // ephemeral: false para que todos vean el resultado
              console.log('Respuesta de tracking enviada.');
 
-        } else if (interaction.commandName === 'agregar-caso') { // <-- NUEVO MANEJADOR PARA /agregar-caso
+        } else if (interaction.commandName === 'agregar-caso') { // <-- MANEJADOR ACTUALIZADO PARA /agregar-caso
             console.log(`Comando /agregar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
             // --- Restricción de canal para /agregar-caso ---
@@ -529,17 +543,26 @@ client.on('interactionCreate', async interaction => {
                  return; // Salir del handler si no es el canal correcto
             }
 
-            // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO !!!
+            // --- Iniciar el flujo de 2 pasos: Mostrar Select Menu para Tipo de Solicitud ---
             try {
-                const modal = buildCasoModal(); // Función que crea el objeto Modal para casos (definida más abajo)
-                // showModal() debe ser la respuesta INICIAL a la interacción del comando
-                await interaction.showModal(modal);
-                console.log('Modal de registro de caso mostrado al usuario.');
+                const selectMenu = buildTipoSolicitudSelectMenu(); // <-- NUEVA FUNCIÓN para el Select Menu
+                const actionRow = new ActionRowBuilder().addComponents(selectMenu);
+
+                // Guardar el estado pendiente del usuario, indicando que está en el paso 1 del flujo de casos
+                userPendingData.set(interaction.user.id, { type: 'caso', paso: 1 }); // Usar mapa renombrado
+
+                // Responder con el mensaje que contiene el Select Menu. Ephemeral para no saturar el canal.
+                await interaction.reply({
+                    content: 'Por favor, selecciona el tipo de solicitud:',
+                    components: [actionRow],
+                    ephemeral: true,
+                });
+                console.log('Select Menu de Tipo de Solicitud mostrado al usuario.');
 
             } catch (error) {
-                console.error('Error al mostrar el modal de registro de caso:', error);
-                // Si showModal falla, respondemos con un mensaje de error efímero
-                await interaction.reply({ content: 'Hubo un error al abrir el formulario de registro de caso. Por favor, inténtalo de nuevo.', ephemeral: true });
+                console.error('Error al mostrar el Select Menu de Tipo de Solicitud:', error);
+                await interaction.reply({ content: 'Hubo un error al iniciar el formulario de registro de caso. Por favor, inténtalo de nuevo.', ephemeral: true });
+                userPendingData.delete(interaction.user.id); // Limpiar estado pendiente si falla
             }
 
         } else {
@@ -552,15 +575,75 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- Manejar Submisiones de Modals ---
+    // --- Manejar Interacciones de Select Menu ---
+    if (interaction.isStringSelectMenu()) { // <-- NUEVO MANEJADOR para Select Menus
+        // Verifica si la interacción es de nuestro Select Menu de Tipo de Solicitud
+        if (interaction.customId === 'casoTipoSolicitudSelect') { // <-- CUSTOM ID del Select Menu
+            console.log(`Selección en Select Menu 'casoTipoSolicitudSelect' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+
+            // Deferir la actualización del mensaje del Select Menu mientras procesamos
+            await interaction.deferUpdate();
+
+            const userId = interaction.user.id;
+            const pendingData = userPendingData.get(userId); // Usar mapa renombrado
+
+            // Verificar si el usuario estaba en el paso 1 del flujo de casos
+            if (pendingData && pendingData.type === 'caso' && pendingData.paso === 1) {
+                const selectedTipoSolicitud = interaction.values[0]; // Obtiene el valor seleccionado (es un array, tomamos el primero)
+                console.log(`Tipo de Solicitud seleccionado: ${selectedTipoSolicitud}`);
+
+                // Actualizar el estado pendiente del usuario con el tipo de solicitud seleccionado
+                userPendingData.set(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud }); // Usar mapa renombrado
+
+                // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO (Paso 2) !!!
+                try {
+                    const modal = buildCasoModal(); // Función que crea el objeto Modal para casos
+                    // showModal() debe ser la respuesta a la interacción del Select Menu
+                    await interaction.followUp({ // Usar followUp después de deferUpdate
+                        content: 'Por favor, completa los detalles del caso:', // Mensaje antes del modal
+                        ephemeral: true, // El mensaje y el modal son efímeros
+                        components: modal.components, // Pasar los componentes del modal
+                        // NOTA: Discord.js v14+ maneja showModal() directamente después de followUp/editReply
+                        // No necesitas pasar 'modal' como objeto completo aquí, solo los componentes si es necesario,
+                        // pero showModal() es el método correcto para mostrar el modal.
+                        // La forma correcta es usar interaction.showModal() después de deferUpdate.
+                    });
+                    // La forma correcta es mostrar el modal directamente después de deferUpdate
+                    await interaction.showModal(modal);
+                    console.log('Modal de registro de caso (Paso 2) mostrado al usuario.');
+
+                    // Opcional: Editar el mensaje original del Select Menu para indicar que se completó
+                    await interaction.editReply({
+                        content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Por favor, completa el formulario que apareció.`,
+                        components: [], // Eliminar el Select Menu del mensaje original
+                        ephemeral: true,
+                    });
+
+
+                } catch (error) {
+                    console.error('Error al mostrar el Modal de registro de caso (Paso 2):', error);
+                    await interaction.followUp({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
+                    userPendingData.delete(userId); // Limpiar estado pendiente si falla
+                }
+
+            } else {
+                // Si el usuario interactuó con el Select Menu pero no estaba en el estado esperado
+                 console.warn(`Interacción de Select Menu inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
+                 await interaction.followUp({ content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
+                 userPendingData.delete(userId); // Limpiar estado por si acaso
+            }
+        }
+        // Manejar otros Select Menus si los tienes
+    }
+
+
+    // --- Manejar Sumisiones de Modals ---
     if (interaction.isModalSubmit()) {
         // Verifica si la sumisión es de nuestro modal de Factura A (usando el customId)
-        if (interaction.customId === 'facturaAModal') { // <-- CUSTOM ID RENOMBRADO
+        if (interaction.customId === 'facturaAModal') {
              console.log(`Submisión del modal 'facturaAModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-             // Deferir la respuesta inmediatamente. Esto le dice a Discord que estamos procesando
-             // y evita que la interacción "expire" si tarda más de 3 segundos.
-             // ephemeral: true significa que la respuesta "Pensando..." y la respuesta final solo las verá el usuario que interactuó.
+             // Deferir la respuesta inmediatamente.
              await interaction.deferReply({ ephemeral: true });
 
 
@@ -611,12 +694,12 @@ client.on('interactionCreate', async interaction => {
 
              try {
                  // 1. Escribir los datos de texto en Google Sheets (Factura A)
-                 if (spreadsheetIdFacA && sheetRangeFacA) { // <-- Usar variables de Factura A
+                 if (spreadsheetIdFacA && sheetRangeFacA) { // Usar variables de Factura A
                       console.log('Intentando escribir en Google Sheets (Factura A)...');
                       // ASEGÚRATE QUE sheetRangeFacA EN RAILWAY COINCIDE CON TUS COLUMNAS
                       await sheets.spreadsheets.values.append({
-                          spreadsheetId: spreadsheetIdFacA, // <-- Usar ID de Factura A
-                          range: sheetRangeFacA,         // <-- Usar rango de Factura A
+                          spreadsheetId: spreadsheetIdFacA, // Usar ID de Factura A
+                          range: sheetRangeFacA,         // Usar rango de Factura A
                           valueInputOption: 'RAW', // Usar 'RAW' para texto plano
                           insertDataOption: 'INSERT_ROWS', // Agrega una nueva fila
                           resource: { values: [rowData] }, // rowData ahora tiene 5 elementos si agregaste descripción
@@ -627,7 +710,8 @@ client.on('interactionCreate', async interaction => {
                       // 2. Si la escritura en Sheet fue exitosa, poner al usuario en estado de espera de archivos (solo si hay carpeta Drive)
                       if (parentDriveFolderId) {
                            // Guardamos el ID del usuario y el número de pedido asociado.
-                           waitingForAttachments.set(interaction.user.id, {
+                           userPendingData.set(interaction.user.id, { // Usar mapa renombrado
+                                type: 'facturaA', // Indicar que espera adjuntos de Factura A
                                 pedido: pedido, // Guardamos el pedido para nombrar la carpeta de Drive
                                 timestamp: new Date() // Opcional: Guardar timestamp para posible expiración
                            });
@@ -657,7 +741,7 @@ client.on('interactionCreate', async interaction => {
                  } else {
                      confirmationMessage += '❌ Solicitud de Factura A no pudo cargarse en Google Sheets (configuración incompleta).';
                      // Si no se pudo guardar en Sheet, no esperamos archivos.
-                     waitingForAttachments.delete(interaction.user.id); // Asegurarse de que no esté en espera
+                     userPendingData.delete(interaction.user.id); // Usar mapa renombrado
                  }
 
 
@@ -694,110 +778,130 @@ client.on('interactionCreate', async interaction => {
                  console.log('Mensaje de error de sumisión de modal Factura A enviado.');
 
                  // Si hubo un error al guardar en Sheet, nos aseguramos de que el usuario no quede en estado de espera
-                 waitingForAttachments.delete(interaction.user.id); // Asegurarse de que no esté en espera
+                 userPendingData.delete(interaction.user.id); // Usar mapa renombrado
              }
 
-        } else if (interaction.customId === 'casoModal') { // <-- NUEVO MANEJADOR PARA LA SUMISIÓN DEL MODAL DE CASOS
+        } else if (interaction.customId === 'casoModal') { // Manejador para la sumisión del modal de casos
              console.log(`Submisión del modal 'casoModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
              // Deferir la respuesta inmediatamente.
              await interaction.deferReply({ ephemeral: true });
 
-             // !!! RECUPERAR DATOS DE LOS CAMPOS DEL MODAL DE CASOS !!!
-             const pedido = interaction.fields.getTextInputValue('casoPedidoInput'); // Usar IDs de campos específicos del modal de casos
-             const numeroCaso = interaction.fields.getTextInputValue('casoNumeroCasoInput');
-             const tipoSolicitud = interaction.fields.getTextInputValue('casoTipoSolicitudInput');
-             const datosContacto = interaction.fields.getTextInputValue('casoDatosContactoInput');
+             const userId = interaction.user.id;
+             const pendingData = userPendingData.get(userId); // Usar mapa renombrado
 
+             // Verificar si el usuario estaba en el paso 2 del flujo de casos y tenemos el tipo de solicitud guardado
+             if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
 
-             console.log(`Datos del modal Caso - Pedido: ${pedido}, Número Caso: ${numeroCaso}, Tipo Solicitud: ${tipoSolicitud}, Datos Contacto: ${datosContacto}`);
+                 // !!! RECUPERAR DATOS DE LOS CAMPOS DEL MODAL DE CASOS !!!
+                 const pedido = interaction.fields.getTextInputValue('casoPedidoInput'); // Usar IDs de campos específicos del modal de casos
+                 const numeroCaso = interaction.fields.getTextInputValue('casoNumeroCasoInput');
+                 // El tipo de solicitud ya lo tenemos guardado en pendingData.tipoSolicitud
+                 const datosContacto = interaction.fields.getTextInputValue('casoDatosContactoInput');
 
-             // Obtener la fecha y hora actual del sistema del bot
-             const fechaHoraActual = new Date();
-             const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
-                 year: 'numeric',
-                 month: '2-digit',
-                 day: '2-digit',
-                 hour: '2-digit',
-                 minute: '2-digit',
-                 second: '2-digit',
-                 hour12: false, // Formato 24 horas
-                 timeZone: 'America/Argentina/Buenos_Aires'
-             }).replace(/\//g, '-'); // Reemplazar '/' con '-' para el formato DD-MM-YYYY
+                 const tipoSolicitud = pendingData.tipoSolicitud; // <-- OBTENEMOS DEL ESTADO PENDIENTE
 
-             // Obtener el nombre de usuario de Discord
-             const agenteDiscord = interaction.user.tag; // Nombre de usuario + discriminador (ej: User#1234)
+                 console.log(`Datos del modal Caso - Pedido: ${pedido}, Número Caso: ${numeroCaso}, Tipo Solicitud (guardado): ${tipoSolicitud}, Datos Contacto: ${datosContacto}`);
 
-             // --- Construir el array de datos para la fila del Sheet de Casos ---
-             // El orden DEBE coincidir exactamente con tus columnas en la pestaña "SOLICITUDES BGH 2025":
-             // Col A: N° de pedido
-             // Col B: Fecha
-             // Col C: Agente que cargo la solicitud
-             // Col D: Numero de caso
-             // Col E: Solicitud (CAMBIO DEFECTUOSO, etc.)
-             // Col F: Dirección/Telefono/Datos
-             const rowDataCaso = [
-                 pedido,              // Col A
-                 fechaHoraFormateada, // Col B
-                 agenteDiscord,       // Col C
-                 `#${numeroCaso}`,    // Col D (con # añadido si lo deseas)
-                 tipoSolicitud,       // Col E
-                 datosContacto        // Col F
-             ];
+                 // Obtener la fecha y hora actual del sistema del bot
+                 const fechaHoraActual = new Date();
+                 const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
+                     year: 'numeric',
+                     month: '2-digit',
+                     day: '2-digit',
+                     hour: '2-digit',
+                     minute: '2-digit',
+                     second: '2-digit',
+                     hour12: false, // Formato 24 horas
+                     timeZone: 'America/Argentina/Buenos_Aires'
+                 }).replace(/\//g, '-'); // Reemplazar '/' con '-' para el formato DD-MM-YYYY
 
-             console.log('Datos a escribir en Sheet (Casos):', rowDataCaso);
+                 // Obtener el nombre de usuario de Discord (displayName)
+                 // interaction.member es el objeto GuildMember, que tiene displayName
+                 const agenteDiscord = interaction.member ? interaction.member.displayName : interaction.user.username; // <-- USAR displayName o username como fallback
 
-             // --- Escribir en Google Sheets (Casos) ---
-             let sheetSuccess = false;
-             try {
-                 if (spreadsheetIdCasos && sheetRangeCasos) { // <-- Usar variables de Casos
-                     console.log('Intentando escribir en Google Sheets (Casos)...');
-                     // ASEGÚRATE QUE sheetRangeCasos EN RAILWAY COINCIDE CON TUS COLUMNAS (ej: SOLICITUDES BGH 2025!A:F)
-                     await sheets.spreadsheets.values.append({
-                         spreadsheetId: spreadsheetIdCasos, // <-- Usar ID de Casos
-                         range: sheetRangeCasos,         // <-- Usar rango de Casos
-                         valueInputOption: 'RAW', // Usar 'RAW' para texto plano
-                         insertDataOption: 'INSERT_ROWS', // Agrega una nueva fila
-                         resource: { values: [rowDataCaso] },
-                     });
-                     console.log('Datos de Sheet (Casos) agregados correctamente.');
-                     sheetSuccess = true;
-                 } else {
-                     console.warn('Variables de Google Sheets (Casos) no configuradas. Saltando escritura en Sheet para casos.');
+                 // --- Construir el array de datos para la fila del Sheet de Casos ---
+                 // El orden DEBE coincidir exactamente con tus columnas en la pestaña "SOLICITUDES BGH 2025":
+                 // Col A: N° de pedido
+                 // Col B: Fecha
+                 // Col C: Agente que cargo la solicitud
+                 // Col D: Numero de caso
+                 // Col E: Solicitud (CAMBIO DEFECTUOSO, etc.)
+                 // Col F: Dirección/Telefono/Datos
+                 const rowDataCaso = [
+                     pedido,              // Col A
+                     fechaHoraFormateada, // Col B
+                     agenteDiscord,       // Col C <-- USANDO displayName
+                     `#${numeroCaso}`,    // Col D (con # añadido si lo deseas)
+                     tipoSolicitud,       // Col E <-- USANDO VALOR DEL SELECT MENU
+                     datosContacto        // Col F
+                 ];
+
+                 console.log('Datos a escribir en Sheet (Casos):', rowDataCaso);
+
+                 // --- Escribir en Google Sheets (Casos) ---
+                 let sheetSuccess = false;
+                 try {
+                     if (spreadsheetIdCasos && sheetRangeCasos) { // Usar variables de Casos
+                         console.log('Intentando escribir en Google Sheets (Casos)...');
+                         // ASEGÚRATE QUE sheetRangeCasos EN RAILWAY COINCIDE CON TUS COLUMNAS (ej: SOLICITUDES BGH 2025!A:F)
+                         await sheets.spreadsheets.values.append({
+                             spreadsheetId: spreadsheetIdCasos, // Usar ID de Casos
+                             range: sheetRangeCasos,         // Usar rango de Casos
+                             valueInputOption: 'RAW', // Usar 'RAW' para texto plano
+                             insertDataOption: 'INSERT_ROWS', // Agrega una nueva fila
+                             resource: { values: [rowDataCaso] },
+                         });
+                         console.log('Datos de Sheet (Casos) agregados correctamente.');
+                         sheetSuccess = true;
+                     } else {
+                         console.warn('Variables de Google Sheets (Casos) no configuradas. Saltando escritura en Sheet para casos.');
+                     }
+
+                     // --- Responder al usuario con la confirmación del registro de caso ---
+                     let confirmationMessage = '';
+                     if (sheetSuccess) {
+                         confirmationMessage += '✅ Caso registrado correctamente en Google Sheets.';
+                     } else {
+                         confirmationMessage += '❌ El caso no pudo registrarse en Google Sheets (configuración incompleta).';
+                     }
+
+                     await interaction.editReply({ content: confirmationMessage, ephemeral: true });
+                     console.log('Confirmación de registro de caso enviada.');
+
+                 } catch (error) {
+                     console.error('Error general durante el procesamiento de la sumisión del modal (Casos Sheets):', error);
+
+                     // Construir un mensaje de error detallado para el usuario
+                     let errorMessage = '❌ Hubo un error al procesar el registro de tu caso.';
+                     // Intentar extraer mensaje de error de Google API si está disponible
+                     if (error.response && error.response.data) {
+                          if (error.response.data.error && error.response.data.error.message) {
+                               errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                          } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
+                                errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                          } else {
+                               errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
+                          }
+                     } else {
+                          errorMessage += ` Detalles: ${error.message}`;
+                     }
+                     errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
+
+                     await interaction.editReply({ content: errorMessage, ephemeral: true });
+                     console.log('Mensaje de error de sumisión de modal Caso enviado.');
+                 } finally {
+                     // Limpiar el estado pendiente del usuario después de procesar la sumisión del modal
+                     userPendingData.delete(userId); // Usar mapa renombrado
+                     console.log(`Estado pendiente del usuario ${interaction.user.tag} limpiado.`);
                  }
 
-                 // --- Responder al usuario con la confirmación del registro de caso ---
-                 let confirmationMessage = '';
-                 if (sheetSuccess) {
-                     confirmationMessage += '✅ Caso registrado correctamente en Google Sheets.';
-                 } else {
-                     confirmationMessage += '❌ El caso no pudo registrarse en Google Sheets (configuración incompleta).';
-                 }
 
-                 await interaction.editReply({ content: confirmationMessage, ephemeral: true });
-                 console.log('Confirmación de registro de caso enviada.');
-
-             } catch (error) {
-                 console.error('Error general durante el procesamiento de la sumisión del modal (Casos Sheets):', error);
-
-                 // Construir un mensaje de error detallado para el usuario
-                 let errorMessage = '❌ Hubo un error al procesar el registro de tu caso.';
-                 // Intentar extraer mensaje de error de Google API si está disponible
-                 if (error.response && error.response.data) {
-                      if (error.response.data.error && error.response.data.error.message) {
-                           errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
-                      } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
-                            errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
-                      } else {
-                           errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
-                      }
-                 } else {
-                      errorMessage += ` Detalles: ${error.message}`;
-                 }
-                 errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
-
-                 await interaction.editReply({ content: errorMessage, ephemeral: true });
-                 console.log('Mensaje de error de sumisión de modal Caso enviado.');
+             } else {
+                 // Si el usuario envió el modal pero no estaba en el estado esperado (paso 2)
+                 console.warn(`Sumisión de modal 'casoModal' inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
+                 await interaction.editReply({ content: 'Esta sumisión de formulario no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
+                 userPendingData.delete(userId); // Limpiar estado por si acaso
              }
 
         } else {
@@ -809,8 +913,8 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- Manejar otros tipos de interacciones (Botones, Select Menus, etc.) ---
-    // Si agregas botones o select menus, los manejarías aquí con interaction.isButton() o interaction.isSelectMenu()
+    // --- Manejar otros tipos de interacciones (Botones, etc.) ---
+    // Si agregas botones, los manejarías aquí con interaction.isButton()
 });
 
 
@@ -820,9 +924,9 @@ client.on('interactionCreate', async interaction => {
  * Función para construir el objeto Modal de Factura A
  * @returns {ModalBuilder} - El objeto Modal listo para ser mostrado.
  */
-function buildFacturaAModal() { // <-- FUNCIÓN RENOMBRADA
+function buildFacturaAModal() {
     const modal = new ModalBuilder()
-        .setCustomId('facturaAModal') // <-- CUSTOM ID RENOMBRADO
+        .setCustomId('facturaAModal') // CUSTOM ID RENOMBRADO
         .setTitle('Registrar Solicitud Factura A'); // Título que ve el usuario
 
     // Campo para N° de Pedido
@@ -869,13 +973,35 @@ function buildFacturaAModal() { // <-- FUNCIÓN RENOMBRADA
 }
 
 /**
+ * Función para construir el Select Menu del Tipo de Solicitud de Caso.
+ * @returns {StringSelectMenuBuilder} - El objeto Select Menu listo para ser usado en un mensaje.
+ */
+function buildTipoSolicitudSelectMenu() { // <-- NUEVA FUNCIÓN para el Select Menu
+    const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('casoTipoSolicitudSelect') // ID único para identificar este Select Menu
+        .setPlaceholder('Selecciona el tipo de solicitud...'); // Texto que se muestra antes de seleccionar
+
+    // Añadir las opciones al Select Menu
+    tipoSolicitudOptions.forEach(option => {
+        selectMenu.addOptions(
+            new StringSelectMenuOptionBuilder()
+                .setLabel(option.label) // Texto que ve el usuario
+                .setValue(option.value) // Valor que se envía al bot
+        );
+    });
+
+    return selectMenu;
+}
+
+/**
  * Función para construir el objeto Modal de Registro de Caso (Cambios/Devoluciones)
+ * Este modal ahora NO incluye el campo de Tipo de Solicitud.
  * @returns {ModalBuilder} - El objeto Modal listo para ser mostrado.
  */
-function buildCasoModal() { // <-- NUEVA FUNCIÓN PARA EL MODAL DE CASOS
+function buildCasoModal() { // Función para el modal de casos (MODIFICADA)
     const modal = new ModalBuilder()
-        .setCustomId('casoModal') // ID único para identificar este modal al ser enviado (DIFERENTE al de Factura A)
-        .setTitle('Registrar Caso Cambio/Devolución'); // Título que ve el usuario
+        .setCustomId('casoModal') // ID único para identificar este modal al ser enviado
+        .setTitle('Detalles del Caso'); // Título que ve el usuario (cambiado para reflejar que es el paso 2)
 
     // Campo para N° de Pedido (para el caso)
     const casoPedidoInput = new TextInputBuilder()
@@ -891,14 +1017,6 @@ function buildCasoModal() { // <-- NUEVA FUNCIÓN PARA EL MODAL DE CASOS
         .setStyle('Short')
         .setRequired(true);
 
-    // Campo para Tipo de Solicitud (texto, explicando las opciones)
-    const casoTipoSolicitudInput = new TextInputBuilder()
-        .setCustomId('casoTipoSolicitudInput') // ID único para este campo
-        .setLabel("Tipo de Solicitud (Escribe una opción)")
-        .setPlaceholder("Ej: CAMBIO DEFECTUOSO") // Placeholder para guiar al usuario
-        .setStyle('Short')
-        .setRequired(true);
-
     // Campo para Dirección/Telefono/Datos
     const casoDatosContactoInput = new TextInputBuilder()
         .setCustomId('casoDatosContactoInput') // ID único para este campo
@@ -909,12 +1027,12 @@ function buildCasoModal() { // <-- NUEVA FUNCIÓN PARA EL MODAL DE CASOS
     // Creamos una fila por cada campo de texto.
     const row1 = new ActionRowBuilder().addComponents(casoPedidoInput);
     const row2 = new ActionRowBuilder().addComponents(casoNumeroCasoInput);
-    const row3 = new ActionRowBuilder().addComponents(casoTipoSolicitudInput);
-    const row4 = new ActionRowBuilder().addComponents(casoDatosContactoInput);
+    // La fila del Tipo de Solicitud se elimina de aquí
+    const row3 = new ActionRowBuilder().addComponents(casoDatosContactoInput);
 
 
     // Añadir las filas de componentes al modal
-    modal.addComponents(row1, row2, row3, row4);
+    modal.addComponents(row1, row2, row3);
 
     return modal;
 }
