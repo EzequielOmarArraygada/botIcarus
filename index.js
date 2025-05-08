@@ -37,6 +37,13 @@ const discordToken = process.env.DISCORD_TOKEN;
 // Canales específicos donde se permiten los comandos
 const targetChannelIdFacA = process.env.TARGET_CHANNEL_ID_FAC_A; // Canal para /solicitud
 const targetChannelIdEnvios = process.env.TARGET_CHANNEL_ID_ENVIOS; // Canal para /tracking
+const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor también para permisos
+
+// --- Variables de Entorno para IDs de Comandos ---
+// ¡Necesitarás obtener estos IDs después de desplegar los comandos!
+// Configura estas variables de entorno en Railway.
+const commandIdSolicitud = process.env.COMMAND_ID_SOLICITUD; // ID numérico del comando /solicitud
+const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
 
 
 // --- Configuración de Google Sheets Y Google Drive ---
@@ -108,9 +115,61 @@ const waitingForAttachments = new Map();
 // --- Eventos del Bot de Discord ---
 
 // Cuando el bot se conecta exitosamente y está listo
-client.once('ready', () => {
+client.once('ready', async () => { // <-- Hacemos la función async para usar await
     console.log(`Bot logeado como ${client.user.tag}!`);
     console.log(`Conectado a Discord.`);
+
+    // --- Lógica para establecer permisos de comandos por canal ---
+    // Esto solo se ejecutará una vez cuando el bot inicie.
+    if (guildId && commandIdSolicitud && targetChannelIdFacA && commandIdTracking && targetChannelIdEnvios) {
+        try {
+            const guild = client.guilds.cache.get(guildId);
+            if (!guild) {
+                console.error(`Error: No se encontró el servidor con ID ${guildId}. No se pudieron establecer los permisos de comandos.`);
+                return; // Salir si no se encuentra el servidor
+            }
+
+            // Definimos los permisos que queremos establecer
+            const permissions = [
+                {
+                    id: commandIdSolicitud, // ID del comando /solicitud
+                    permissions: [
+                        {
+                            id: targetChannelIdFacA, // ID del canal "facturas-a-pruebas"
+                            type: 2, // Tipo 2 = CHANNEL
+                            permission: true, // Permitir el comando en este canal
+                        },
+                        // Si quieres permitirlo en más canales, añade más objetos aquí
+                    ],
+                },
+                {
+                    id: commandIdTracking, // ID del comando /tracking
+                    permissions: [
+                        {
+                            id: targetChannelIdEnvios, // ID del canal "envios-pruebas"
+                            type: 2, // Tipo 2 = CHANNEL
+                            permission: true, // Permitir el comando en este canal
+                        },
+                         // Si quieres permitirlo en más canales, añade más objetos aquí
+                    ],
+                },
+                // Puedes añadir más objetos para otros comandos si tienes
+            ];
+
+            // Establecer los permisos en el servidor
+            // NOTA: Esto sobrescribirá cualquier permiso de comando existente para estos comandos en este servidor.
+            await guild.commands.permissions.set({ permissions });
+
+            console.log('Permisos de comandos de barra por canal establecidos correctamente.');
+
+        } catch (error) {
+            console.error('Error al establecer permisos de comandos de barra:', error);
+            console.error('Asegúrate de que el bot tiene el permiso "Manage Guild" (Administrar Servidor) en el servidor y que los IDs de comandos y canales son correctos.');
+        }
+    } else {
+        console.warn('Variables de entorno para permisos de comandos incompletas (GUILD_ID, COMMAND_ID_SOLICITUD, TARGET_CHANNEL_ID_FAC_A, COMMAND_ID_TRACKING, o TARGET_CHANNEL_ID_ENVIOS). No se establecerán los permisos de comandos por canal.');
+    }
+
     // Puedes añadir aquí lógica para verificar que los comandos estén registrados globalmente si quieres, pero ya lo haces con el script deploy-commands.js
 });
 
@@ -125,7 +184,7 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // Opcional: Restringir la recepción de adjuntos a un canal específico (ej. el mismo canal que /solicitud)
+    // Opcional: Restringir la recepción de adjuntos al canal de solicitudes
     if (targetChannelIdFacA && message.channelId !== targetChannelIdFacA) {
          // console.log(`Mensaje recibido fuera del canal objetivo para adjuntos: ${message.content}`);
          return; // Ignorar mensajes fuera del canal objetivo para adjuntos
@@ -254,8 +313,9 @@ client.on('interactionCreate', async interaction => {
         if (interaction.commandName === 'solicitud') {
              console.log(`Comando /solicitud recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-             // --- Restringir el comando /solicitud a un canal específico ---
+             // --- Restricción de canal (redundante si los permisos están configurados, pero útil como fallback) ---
              if (targetChannelIdFacA && interaction.channelId !== targetChannelIdFacA) {
+                  // Este mensaje solo se mostrará si la restricción de permisos de Discord falla por alguna razón
                   await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdFacA}>.`, ephemeral: true });
                   return; // Salir del handler si no es el canal correcto
              }
@@ -282,8 +342,9 @@ client.on('interactionCreate', async interaction => {
         } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
              console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-             // --- Restringir el comando /tracking a un canal específico ---
+             // --- Restricción de canal (redundante si los permisos están configurados, pero útil como fallback) ---
              if (targetChannelIdEnvios && interaction.channelId !== targetChannelIdEnvios) {
+                 // Este mensaje solo se mostrará si la restricción de permisos de Discord falla por alguna razón
                  await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdEnvios}>.`, ephemeral: true });
                  return; // Salir del handler si no es el canal correcto
              }

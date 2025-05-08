@@ -70,10 +70,16 @@ const rest = new REST({ version: '10' }).setToken(token); // '10' es la versión
         }
 
         const data = await rest.put(
-            Routes.applicationGuildCommands(clientId, guildId), // Endpoint por servidor
-            { body: commands },
-        );
-        console.log(`Comandos (${data.length}) desplegados en el servidor con ID: ${guildId}.`);
+    Routes.applicationGuildCommands(clientId, guildId), // Endpoint por servidor
+    { body: commands },
+);
+console.log(`Comandos (${data.length}) desplegados en el servidor con ID: ${guildId}.`);
+
+// --- Añadir esto para ver los IDs ---
+console.log("IDs de comandos desplegados:");
+data.forEach(command => {
+    console.log(`Nombre: ${command.name}, ID: ${command.id}`);
+});
 
 
     } catch (error) {
