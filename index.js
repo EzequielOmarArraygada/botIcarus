@@ -1,4 +1,3 @@
-// Cargar variables de entorno del archivo .env (forma para Módulos ES)
 import 'dotenv/config';
 
 // --- Importaciones ---
@@ -20,10 +19,6 @@ import {
 import { google } from 'googleapis'; // Librería oficial de Google
 import path from 'path';              // Módulo nativo para manejo de rutas
 import fetch from 'node-fetch';       // Para descargar archivos adjuntos desde URL (Importación estándar ESM)
-
-// No necesitamos cheerio para el tracking de Andreani ya que la API devuelve JSON
-// import *as cheerio from 'cheerio';
-
 
 // --- Configuración del Cliente de Discord ---
 // Aquí se crea la instancia principal del bot
@@ -53,7 +48,6 @@ const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/expl
 
 
 // --- Variables de Entorno para IDs de Comandos ---
-// ¡Necesitarás obtener estos IDs después de desplegar los comandos!
 // Configura estas variables de entorno en Railway.
 const commandIdFacturaA = process.env.COMMAND_ID_FACTURA_A; // ID numérico del comando /factura-a
 const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
@@ -148,16 +142,8 @@ if (!parentDriveFolderId) {
 }
 
 
-// --- Manejo de Estado para Flujos Multi-paso y Notificaciones ---
-// Usaremos un Map para rastrear a los usuarios que han iniciado un flujo multi-paso.
-// Clave: ID del usuario de Discord (string)
-// Valor: Un objeto con información pendiente.
-// Para Factura A: { type: 'facturaA', pedido: '...', timestamp: Date } -> Esperando adjuntos
-// Para Casos: { type: 'caso', paso: 1 (esperando select), paso: 2 (esperando modal), tipoSolicitud: '...' }
-const userPendingData = new Map();
 
-// REMOVIDO: Set para rastrear las filas de error ya notificadas (ahora se guarda en la hoja)
-// const notifiedErrorRows = new Set();
+const userPendingData = new Map();
 
 // Intervalo de tiempo entre verificaciones de errores en la hoja (en milisegundos)
 let ERROR_CHECK_INTERVAL = process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000; // Default: 5 minutos (300000 ms)
@@ -276,10 +262,6 @@ Este comando te permite buscar casos por Número de Pedido en las hojas de Googl
             await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
             return; // Salir del listener después de responder
         }
-
-        // Si el mensaje está en el canal de ayuda pero no contiene palabras clave de comando
-        // console.log('Mensaje en canal de ayuda sin palabras clave de comando.');
-        // return; // Salir del listener si no es un mensaje de ayuda reconocido
     }
 
 
@@ -390,15 +372,8 @@ Este comando te permite buscar casos por Número de Pedido en las hojas de Googl
         }
 
     } else if (message.attachments.size > 0) {
-         // Si el mensaje tiene adjuntos pero el usuario NO está esperando
          console.log(`Mensaje con adjuntos recibido de ${message.author.tag}, pero no está en estado de espera. Ignorando adjuntos.`);
-         // Opcional: Puedes enviar un mensaje discreto al usuario si quieres
-         // await message.react('❓'); // Reaccionar con un emoji de pregunta
-         // o puedes enviar un mensaje efímero:
-         // await message.reply({ content: 'Parece que enviaste archivos adjuntos, pero no estabas en medio de una solicitud. Usa /factura-a primero para iniciar el proceso.', ephemeral: true });
     } else {
-        // Si el mensaje no tiene adjuntos y el usuario no está esperando, es un mensaje normal.
-        // console.log(`Mensaje normal sin adjuntos de ${message.author.tag}.`);
     }
 });
 
@@ -428,9 +403,7 @@ client.on('interactionCreate', async interaction => {
 
             } catch (error) {
                 console.error('Error al mostrar el modal de Factura A:', error);
-                // Si showModal falla, respondemos con un mensaje de error efímero
                 await interaction.reply({ content: 'Hubo un error al abrir el formulario de solicitud de Factura A. Por favor, inténtalo de nuevo.', ephemeral: true });
-                // Si falló el modal, nos aseguramos de que el usuario no quede en un estado de espera (aunque no debería estarlo aún)
                 userPendingData.delete(interaction.user.id); // Usar mapa renombrado
             }
         } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
@@ -462,9 +435,6 @@ client.on('interactionCreate', async interaction => {
              console.log(`Consultando API JSON: ${andreaniApiUrl}`);
 
              try {
-                 // --- OBTENER EL ENCABEZADO DE AUTORIZACIÓN DESDE VARIABLES DE ENTORNO ---
-                 // Ya verificamos si andreaniAuthHeader existe al inicio del evento ready,
-                 // pero lo verificamos de nuevo aquí para estar seguros antes de usarlo.
                  if (!andreaniAuthHeader) {
                       console.error("Error: ANDREANI_API_AUTH no está configurada. No se puede consultar el tracking.");
                        await interaction.editReply({ content: '❌ Error de configuración del bot: La clave de autenticación para Andreani no está configurada.', ephemeral: true });
@@ -505,7 +475,6 @@ client.on('interactionCreate', async interaction => {
                  // Parsear la respuesta como JSON
                  const trackingData = await apiResponse.json();
                  console.log("Respuesta de la API JSON recibida y parseada.");
-                 // console.log(JSON.stringify(trackingData, null, 2)); // Opcional: log completo del JSON
 
                  // --- Extraer la información del JSON ---
                  // Verificamos si la respuesta contiene la estructura esperada
@@ -751,21 +720,13 @@ client.on('interactionCreate', async interaction => {
                      let detailedResults = '';
                      for (const found of foundRows) {
                          detailedResults += `**Pestaña:** "${found.sheet}", **Fila:** ${found.rowNumber}\n`;
-                         // Mostrar los datos de la fila. Puedes ajustar qué columnas mostrar aquí.
-                         // Por ahora, mostramos las primeras 6 columnas (A-F) como ejemplo.
-                         // Asegurarse de no intentar acceder a índices fuera del rango de la fila
                          const displayColumns = found.data.slice(0, Math.min(found.data.length, 6)).join(' | '); // Unir las primeras 6 columnas con '|' o menos si la fila es más corta
                          detailedResults += `\`${displayColumns}\`\n\n`; // Usar bloques de código para formato
                      }
 
-                     // Combinar el resumen y los resultados detallados.
-                     // Discord tiene un límite de caracteres por mensaje (2000).
-                     // Si los resultados son muy largos, podríamos necesitar enviar varios mensajes.
                      const fullMessage = searchSummary + detailedResults;
 
                      if (fullMessage.length > 2000) {
-                          // Si el mensaje es demasiado largo, enviar un resumen y quizás instruir al usuario
-                          // a revisar la hoja directamente o implementar paginación si es necesario.
                           await interaction.editReply({ content: searchSummary + "Los resultados completos son demasiado largos para mostrar aquí. Por favor, revisa la hoja de Google Sheets directamente.", ephemeral: false });
                      } else {
                           await interaction.editReply({ content: fullMessage, ephemeral: false });
@@ -801,12 +762,6 @@ client.on('interactionCreate', async interaction => {
 
 
         } else {
-            // Manejar otros comandos de barra si los tienes
-            // console.log(`Comando desconocido: ${interaction.commandName}`);
-            // Puedes responder con un mensaje si el bot recibe un comando que no espera
-            // if (!interaction.replied && !interaction.deferred) { // Evitar responder si ya se respondió o deferrió
-            //      await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
-            // }
         }
     }
 
@@ -945,13 +900,6 @@ client.on('interactionCreate', async interaction => {
              }).replace(/\//g, '-'); // Reemplazar '/' con '-' para el formato DD-MM-YYYY
 
 
-             // --- Construir el array de datos para la fila del Sheet de Factura A ---
-             // El orden DEBE coincidir exactamente con tus columnas en Google Sheet de Factura A:
-             // Col 1: "N° de pedido"
-             // Col 2: "Fecha/Hora"
-             // Col 3: "Caso"
-             // Col 4: "Email"
-             // Col 5: "Descripción" (Si agregaste esta columna)
              const rowData = [
                  pedido,              // Datos del modal
                  fechaHoraFormateada, // Fecha/Hora del sistema (ahora con zona horaria especificada)
@@ -1090,18 +1038,9 @@ client.on('interactionCreate', async interaction => {
                      timeZone: 'America/Argentina/Buenos_Aires'
                  }).replace(/\//g, '-'); // Reemplazar '/' con '-' para el formato DD-MM-YYYY
 
-                 // Obtener el nombre de usuario de Discord (displayName)
-                 // interaction.member es el objeto GuildMember, que tiene displayName
+
                  const agenteDiscord = interaction.member ? interaction.member.displayName : interaction.user.username; // <-- USAR displayName o username como fallback
 
-                 // --- Construir el array de datos para la fila del Sheet de Casos ---
-                 // El orden DEBE coincidir exactamente con tus columnas en la pestaña "SOLICITUDES BGH 2025":
-                 // Col A: N° de pedido
-                 // Col B: Fecha
-                 // Col C: Agente que cargo la solicitud
-                 // Col D: Numero de caso
-                 // Col E: Solicitud (CAMBIO DEFECTUOSO, etc.)
-                 // Col F: Dirección/Telefono/Datos
                  const rowDataCaso = [
                      pedido,              // Col A
                      fechaHoraFormateada, // Col B
@@ -1179,16 +1118,9 @@ client.on('interactionCreate', async interaction => {
              }
 
         } else {
-             // Si la sumisión es de otro modal que no manejamos
-             // console.log(`Submisión de modal desconocida con customId: ${interaction.customId}`);
-             // if (!interaction.replied && !interaction.deferred) {
-             //      await interaction.reply({ content: 'Submisión de modal desconocida.', ephemeral: true });
-             // }
         }
     }
 
-    // --- Manejar otros tipos de interacciones (Select Menus, etc.) ---
-    // Si agregas select menus adicionales, los manejarías aquí con interaction.isSelectMenu()
 });
 
 // --- FUNCIÓN PARA VERIFICAR ERRORES EN LA HOJA DE GOOGLE SHEETS ---
@@ -1562,17 +1494,14 @@ async function uploadFileToDrive(drive, folderId, attachment) {
          });
 
          console.log(`Archivo "${uploadedFile.data.name}" subido con éxito. ID de Drive: ${uploadedFile.data.id}`);
-         return uploadedFile.data; // Retornar ID y nombre del archivo subido
+         return uploadedFile.data; 
 
      } catch (error) {
          console.error(`Error al descargar o subir el archivo ${attachment.name}:`, error);
-         throw error; // Relanzar el error para manejarlo en el try/catch principal de la interacción
+         throw error; 
      }
 }
 
-
-// --- Conectar el Bot a Discord usando el Token ---
-// Inicia sesión con el token del bot. Añadimos mensajes de log y manejador de errores.
 
 console.log("Paso 1: Llegamos a la sección de conexión."); // <-- Log de inicio
 console.log(`Paso 2: Token de Discord cargado (primeros 5 chars): ${discordToken ? discordToken.substring(0, 5) + '...' : 'TOKEN NO CARGADO'}`); // <-- Log para verificar que el token se cargó
@@ -1583,8 +1512,5 @@ client.login(discordToken).catch(err => {
     process.exit(1); // Salir del proceso si la conexión falla
 });
 
-// Este log quizás no aparezca si la conexión falla inmediatamente o si process.exit(1) se ejecuta rápido
 console.log("Paso 4: client.login() llamado. Esperando evento 'ready' o error."); // <-- Log después de llamar a login
 
-// NOTA: Asegúrate que tienes un archivo package.json en la raíz de tu proyecto
-// con {"type": "module"} y las dependencias discord.js, googleapis, dotenv, node-fetch.
