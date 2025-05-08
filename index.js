@@ -569,7 +569,8 @@ client.on('interactionCreate', async interaction => {
                  pedido,              // Datos del modal
                  fechaHoraFormateada, // Fecha/Hora del sistema (ahora con zona horaria especificada)
                  `#${caso}`,          // Datos del modal (con # añadido si lo deseas)
-                 email               // Datos del modal
+                 email,
+                 descripcion               // Datos del modal
              ];
 
              console.log('Datos a escribir en Sheet:', rowData);
@@ -716,7 +717,7 @@ function buildSolicitudModal() {
     // Campo para Descripción (Mantenemos en el modal, pero no se guarda en Sheet)
     const descripcionInput = new TextInputBuilder()
         .setCustomId('descripcionInput') // ID único para este campo
-        .setLabel("Detalle de la Solicitud")
+        .setLabel("Observaciones de la solicitud")
         .setStyle('Paragraph') // Estilo de campo: multi-línea
         .setRequired(false); // Puede que no siempre sea necesaria
 
