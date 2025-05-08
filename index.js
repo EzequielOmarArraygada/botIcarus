@@ -302,7 +302,7 @@ Este comando te permite buscar casos por Número de Pedido en las hojas de Googl
         console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (Factura A). Procesando...`);
 
         // Eliminar al usuario del estado de espera inmediatamente
-        userPendingData.delete(userId); // Usar el mapa renombrado
+        userPendingData.delete(userId); // Usar mapa renombrado
 
         // --- Procesar y subir archivos a Google Drive ---
         let driveFolderLink = null; // Para guardar el enlace a la carpeta de Drive
@@ -646,6 +646,13 @@ client.on('interactionCreate', async interaction => {
              const numeroPedidoBuscar = interaction.options.getString('pedido');
              console.log(`Número de pedido a buscar: ${numeroPedidoBuscar}`);
 
+             // --- Validar que el valor buscado no sea la frase literal "Número de pedido" ---
+             if (numeroPedidoBuscar.trim().toLowerCase() === 'número de pedido') {
+                  await interaction.editReply({ content: '❌ Por favor, ingresa un **número de pedido real** para buscar, no el nombre de la columna.', ephemeral: true });
+                  return;
+             }
+
+
              if (!numeroPedidoBuscar) {
                  await interaction.editReply({ content: '❌ Debes proporcionar un número de pedido para buscar.', ephemeral: true });
                  return;
@@ -690,22 +697,33 @@ client.on('interactionCreate', async interaction => {
                      }
 
                      const headerRow = rows[0]; // La primera fila son los encabezados
+                     console.log(`Encabezados leídos de la pestaña "${sheetName}":`, headerRow); // <-- LOGGING ADICIONAL
+
                      // Buscar el índice de la columna "Número de pedido" (insensible a mayúsculas/minúsculas y espacios)
                      const pedidoColumnIndex = headerRow.findIndex(header =>
-                          header && String(header).trim().toLowerCase() === 'Número de pedido'
+                          header && String(header).trim().toLowerCase() === 'número de pedido' // <-- Aseguramos la comparación con 'número de pedido'
                      );
 
                      if (pedidoColumnIndex === -1) {
                          console.warn(`No se encontró la columna "Número de pedido" en la pestaña "${sheetName}".`);
                          searchSummary += `⚠️ No se encontró la columna "Número de pedido" en la pestaña "${sheetName}".\n`;
                          continue; // Saltar a la siguiente pestaña si no se encuentra la columna
+                     } else {
+                         console.log(`Columna "Número de pedido" encontrada en el índice ${pedidoColumnIndex} en la pestaña "${sheetName}".`);
                      }
+
 
                      // Iterar sobre las filas de datos (saltando el encabezado)
                      let foundInSheet = 0;
                      for (let i = 1; i < rows.length; i++) {
                          const row = rows[i];
                          const rowNumber = i + 1; // Número de fila en Google Sheets (basado en 1)
+
+                         // Asegurarse de que la fila tiene la columna del número de pedido antes de acceder a ella
+                         if (row.length <= pedidoColumnIndex) {
+                              // console.warn(`La fila ${rowNumber} en la pestaña "${sheetName}" no tiene suficientes columnas.`);
+                              continue; // Saltar esta fila si no tiene suficientes columnas
+                         }
 
                          // Obtener el valor en la columna "Número de pedido" para esta fila
                          const rowPedidoValue = row[pedidoColumnIndex] ? String(row[pedidoColumnIndex]).trim() : '';
@@ -735,7 +753,8 @@ client.on('interactionCreate', async interaction => {
                          detailedResults += `**Pestaña:** "${found.sheet}", **Fila:** ${found.rowNumber}\n`;
                          // Mostrar los datos de la fila. Puedes ajustar qué columnas mostrar aquí.
                          // Por ahora, mostramos las primeras 6 columnas (A-F) como ejemplo.
-                         const displayColumns = found.data.slice(0, 6).join(' | '); // Unir las primeras 6 columnas con '|'
+                         // Asegurarse de no intentar acceder a índices fuera del rango de la fila
+                         const displayColumns = found.data.slice(0, Math.min(found.data.length, 6)).join(' | '); // Unir las primeras 6 columnas con '|' o menos si la fila es más corta
                          detailedResults += `\`${displayColumns}\`\n\n`; // Usar bloques de código para formato
                      }
 
@@ -786,7 +805,7 @@ client.on('interactionCreate', async interaction => {
             // console.log(`Comando desconocido: ${interaction.commandName}`);
             // Puedes responder con un mensaje si el bot recibe un comando que no espera
             // if (!interaction.replied && !interaction.deferred) { // Evitar responder si ya se respondió o deferrió
-            //     await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
+            //      await interaction.reply({ content: 'No reconozco ese comando.', ephemeral: true });
             // }
         }
     }
