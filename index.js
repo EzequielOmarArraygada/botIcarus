@@ -39,7 +39,7 @@ const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor
 // Canales específicos donde se permiten los comandos (usados para la restricción manual)
 const targetChannelIdFacA = process.env.TARGET_CHANNEL_ID_FAC_A; // Canal para /factura-a
 const targetChannelIdEnvios = process.env.TARGET_CHANNEL_ID_ENVIOS; // Canal para /tracking
-const targetChannelIdCasos = process.env.TARGET_CHANNEL_ID_CASOS; // <-- NUEVA VARIABLE: Canal para /registrar-caso
+const targetChannelIdCasos = process.env.TARGET_CHANNEL_ID_CASOS; // <-- NUEVA VARIABLE: Canal para /agregar-caso
 
 const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/explicaciones (si se mantiene)
 
@@ -49,7 +49,7 @@ const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/expl
 // Configura estas variables de entorno en Railway.
 const commandIdFacturaA = process.env.COMMAND_ID_FACTURA_A; // <-- RENOMBRADO: ID numérico del comando /factura-a
 const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
-const commandIdRegistrarCaso = process.env.COMMAND_ID_REGISTRAR_CASO; // <-- NUEVA VARIABLE: ID numérico del comando /registrar-caso
+const commandIdRegistrarCaso = process.env.COMMAND_ID_REGISTRAR_CASO; // <-- NUEVA VARIABLE: ID numérico del comando /agregar-caso
 
 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH; // Encabezado de autorización para Andreani API
 
@@ -187,11 +187,11 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
         // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio"
         if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio')) {
             const helpMessage = `
-Para usar el comando **/registrar-caso**:
+Para usar el comando **/agregar-caso**:
 
 Este comando abre un formulario (Modal) para registrar un nuevo caso de cambio o devolución.
 
-1.  Escribe \`/registrar-caso\` en el canal [menciona el canal si aplica, ej: <#${targetChannelIdCasos || 'ID_CANAL_CASOS'}>].
+1.  Escribe \`/agregar-caso\` en el canal [menciona el canal si aplica, ej: <#${targetChannelIdCasos || 'ID_CANAL_CASOS'}>].
 2.  Completa los datos solicitados en el formulario que aparecerá (Número de Pedido, Número de Caso, Tipo de Solicitud, Dirección/Teléfono/Datos).
 3.  Para el campo "Tipo de Solicitud", debes escribir una de las siguientes opciones: "CAMBIO DEFECTUOSO", "CAMBIO INCORRECTO", "RETIRO ARREPENTIMIENTO", "PRODUCTO INCOMPLETO".
 4.  Haz clic en "Enviar".
@@ -520,10 +520,10 @@ client.on('interactionCreate', async interaction => {
              await interaction.editReply({ content: trackingInfo, ephemeral: false }); // ephemeral: false para que todos vean el resultado
              console.log('Respuesta de tracking enviada.');
 
-        } else if (interaction.commandName === 'registrar-caso') { // <-- NUEVO MANEJADOR PARA /registrar-caso
-            console.log(`Comando /registrar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+        } else if (interaction.commandName === 'agregar-caso') { // <-- NUEVO MANEJADOR PARA /agregar-caso
+            console.log(`Comando /agregar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-            // --- Restricción de canal para /registrar-caso ---
+            // --- Restricción de canal para /agregar-caso ---
             if (targetChannelIdCasos && interaction.channelId !== targetChannelIdCasos) {
                  await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdCasos}>.`, ephemeral: true });
                  return; // Salir del handler si no es el canal correcto
