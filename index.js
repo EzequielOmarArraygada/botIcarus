@@ -200,12 +200,13 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
 
         // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar"
         if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar')) {
+            // --- EXPLICACIÓN ACTUALIZADA PARA /agregar-caso ---
             const helpMessage = `
 Para usar el comando **/agregar-caso**:
 
 Este comando inicia el proceso para registrar un nuevo caso de cambio o devolución.
 
-1.  Escribe \`/agregar-caso\` en el canal [menciona el canal si aplica, ej: <#${targetChannelIdCasos || 'ID_CANAL_CASOS'}>].
+1.  Escribe \`/agregar-caso\` **únicamente** en el canal <#${targetChannelIdCasos || 'ID_CANAL_CASOS'}>.
 2.  El bot te enviará un mensaje con un desplegable para que elijas el **Tipo de Solicitud**.
 3.  Después de elegir el tipo, haz clic en el botón "Completar Detalles" que aparecerá.
 4.  El bot te presentará un formulario (Modal) para completar los demás datos (Número de Pedido, Número de Caso, Dirección/Teléfono/Datos).
@@ -540,6 +541,7 @@ client.on('interactionCreate', async interaction => {
             console.log(`Comando /agregar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
             // --- Restricción de canal para /agregar-caso ---
+            // Verifica si targetChannelIdCasos está configurado Y si el canal de la interacción NO es el canal objetivo
             if (targetChannelIdCasos && interaction.channelId !== targetChannelIdCasos) {
                  await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdCasos}>.`, ephemeral: true });
                  return; // Salir del handler si no es el canal correcto
@@ -873,7 +875,7 @@ client.on('interactionCreate', async interaction => {
                      pedido,              // Col A
                      fechaHoraFormateada, // Col B
                      agenteDiscord,       // Col C <-- USANDO displayName
-                     numeroCaso,          // Col D 
+                     numeroCaso,          // Col D
                      tipoSolicitud,       // Col E <-- USANDO VALOR DEL SELECT MENU
                      datosContacto        // Col F
                  ];
