@@ -140,24 +140,16 @@ client.on('messageCreate', async message => {
         return;
     }
 
+    // Convertir el mensaje a minúsculas para hacer la detección menos sensible a mayúsculas/minúsculas
+    const messageContentLower = message.content.toLowerCase();
+
     // --- Restringir la lógica de explicaciones de comandos al canal de ayuda ---
     // Solo procesar mensajes para explicaciones si provienen del canal de ayuda configurado
     if (helpChannelId && message.channelId === helpChannelId) {
-        // Convertir el mensaje a minúsculas para hacer la detección menos sensible a mayúsculas/minúsculas
-        const messageContentLower = message.content.toLowerCase();
 
-        // --- Lógica para responder a preguntas sobre comandos ---
-        // Ampliamos las frases de detección
-        if (
-            messageContentLower.includes('como usar /solicitud') ||
-            messageContentLower.includes('explicame /solicitud') ||
-            messageContentLower === '/solicitud ayuda' ||
-            messageContentLower.includes('ayuda solicitud') ||
-            messageContentLower.includes('explica solicitud') ||
-            messageContentLower.includes('info solicitud') ||
-            messageContentLower.includes('que hace /solicitud') || // Nuevas frases
-            messageContentLower.includes('para que sirve /solicitud')
-        ) {
+        // --- Lógica para responder a preguntas sobre comandos (simplificada) ---
+        // Si el mensaje contiene la palabra "solicitud"
+        if (messageContentLower.includes('solicitud')) {
             const helpMessage = `
 Para usar el comando **/solicitud**:
 
@@ -172,20 +164,9 @@ Este comando abre un formulario (Modal) para registrar una nueva solicitud.
             return; // Salir del listener después de responder
         }
 
-        if (
-            messageContentLower.includes('como usar /tracking') ||
-            messageContentLower.includes('explicame /tracking') ||
-            messageContentLower === '/tracking ayuda' ||
-            messageContentLower.includes('ayuda tracking') ||
-            messageContentLower.includes('explica tracking') ||
-            messageContentLower.includes('info tracking') ||
-            messageContentLower.includes('seguimiento andreani') ||
-            messageContentLower.includes('que hace /tracking') || // Nuevas frases
-            messageContentLower.includes('para que sirve /tracking') ||
-            messageContentLower.includes('rastrear envio') ||
-            messageContentLower.includes('consultar envio')
-        ) {
-            const helpMessage = `
+        // Si el mensaje contiene la palabra "tracking" Y NO contuvo "solicitud" (para evitar doble respuesta)
+        if (messageContentLower.includes('tracking') && !messageContentLower.includes('solicitud')) {
+             const helpMessage = `
 Para usar el comando **/tracking**:
 
 Este comando te permite consultar el estado actual de un envío de Andreani.
@@ -198,16 +179,15 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
             return; // Salir del listener después de responder
         }
 
-        // Si el mensaje está en el canal de ayuda pero no es una pregunta de comando reconocida
+        // Si el mensaje está en el canal de ayuda pero no contiene "solicitud" ni "tracking"
         // Puedes añadir una respuesta genérica aquí si quieres, o simplemente ignorarlo.
-        // await message.reply({ content: 'No entendí tu pregunta sobre comandos. Intenta preguntar por un comando específico como "/solicitud ayuda" o "/tracking ayuda".', ephemeral: true });
-        // return; // Salir del listener
+        // console.log('Mensaje en canal de ayuda sin palabras clave de comando.');
+        // return; // Salir del listener si no es un mensaje de ayuda reconocido
     }
 
 
     // --- Lógica existente para recibir archivos adjuntos ---
-    // Esta lógica solo se ejecutará si el mensaje no fue una pregunta sobre un comando
-    // Y si el mensaje no provino del canal de ayuda (a menos que sea el mismo canal)
+    // Esta lógica solo se ejecutará si el mensaje no fue una pregunta sobre un comando en el canal de ayuda.
 
     // Opcional: Restringir la recepción de adjuntos al canal de solicitudes (si es diferente al canal de ayuda)
     // Si el canal de ayuda es el mismo que el canal de solicitudes, esta verificación ya se hizo arriba.
