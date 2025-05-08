@@ -108,7 +108,8 @@ const sheetRangeFacA = process.env.GOOGLE_SHEET_RANGE_FAC_A;
 const spreadsheetIdCasos = process.env.GOOGLE_SHEET_ID_CASOS;
 const sheetRangeCasos = process.env.GOOGLE_SHEET_RANGE_CASOS; // Rango para agregar nuevos casos (A:F)
 // NUEVA VARIABLE: Rango para leer datos, incluyendo la columna de error (hasta J)
-const sheetRangeCasosRead = process.env.GOOGLE_SHEET_RANGE_CASOS_READ; // Por ejemplo: 'SOLICITUDES BGH 2025!A:J'
+// ¡ACTUALIZADO! Ahora debe incluir hasta la columna K para el estado de notificación
+const sheetRangeCasosRead = process.env.GOOGLE_SHEET_RANGE_CASOS_READ; // Por ejemplo: 'SOLICITUDES BGH 2025!A:K'
 
 // Validaciones básicas para variables de Google
 if (!spreadsheetIdFacA || !sheetRangeFacA) {
@@ -138,8 +139,8 @@ if (!parentDriveFolderId) {
 // Para Casos: { type: 'caso', paso: 1 (esperando select), paso: 2 (esperando modal), tipoSolicitud: '...' }
 const userPendingData = new Map();
 
-// NUEVO: Set para rastrear las filas de error ya notificadas (se pierde al reiniciar el bot)
-const notifiedErrorRows = new Set();
+// REMOVIDO: Set para rastrear las filas de error ya notificadas (ahora se guarda en la hoja)
+// const notifiedErrorRows = new Set();
 
 // NUEVA VARIABLE: Intervalo de tiempo entre verificaciones de errores en la hoja (en milisegundos)
 let ERROR_CHECK_INTERVAL = process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000; // Default: 5 minutos (300000 ms)
@@ -173,6 +174,7 @@ client.once('ready', async () => {
         console.log(`Iniciando verificación periódica de errores cada ${ERROR_CHECK_INTERVAL / 1000} segundos.`);
         // Llamar a la función de verificación inmediatamente y luego configurar el intervalo
         checkSheetForErrors();
+        // Usar setInterval para repetir la verificación
         setInterval(checkSheetForErrors, ERROR_CHECK_INTERVAL);
     } else {
         console.warn("La verificación periódica de errores no se iniciará debido a la falta de configuración de Google Sheets (ID, rango de lectura) o canal de casos.");
@@ -991,16 +993,18 @@ async function checkSheetForErrors() {
     console.log('Iniciando verificación de errores en Google Sheets...');
 
     // Asegurarse de que las variables necesarias estén configuradas
+    // ¡Ahora también necesitamos sheetRangeCasosRead para incluir la columna K!
     if (!spreadsheetIdCasos || !sheetRangeCasosRead || !targetChannelIdCasos || !guildId) {
         console.warn('Configuración incompleta para la verificación de errores. Saltando la verificación.');
         return;
     }
 
     try {
-        // Leer los datos de la hoja de Google Sheets, incluyendo la columna J (ERROR)
+        // Leer los datos de la hoja de Google Sheets, incluyendo la columna J (ERROR) y K (NOTIFICADO)
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: spreadsheetIdCasos,
-            range: sheetRangeCasosRead, // Usar el rango que incluye la columna de error
+            // ¡Usar el rango que incluye la columna de error (J) Y la de notificación (K)!
+            range: sheetRangeCasosRead,
         });
 
         const rows = response.data.values;
@@ -1025,8 +1029,16 @@ async function checkSheetForErrors() {
              return;
          }
          // Cargar todos los miembros del servidor para poder buscarlos por nombre
+         // Asegurarse de tener el intent GuildMembers activado
          await guild.members.fetch();
          console.log(`Miembros del servidor ${guild.name} cargados para búsqueda.`);
+
+        // Extraer el nombre de la hoja del rango configurado (Ej: 'SOLICITUDES BGH 2025')
+        const sheetName = sheetRangeCasosRead.split('!')[0];
+        if (!sheetName) {
+            console.error(`Error: No se pudo obtener el nombre de la hoja del rango de lectura configurado: ${sheetRangeCasosRead}.`);
+            return;
+        }
 
 
         // Iterar sobre las filas (empezando desde la segunda fila para omitir encabezados)
@@ -1034,53 +1046,51 @@ async function checkSheetForErrors() {
             const row = rows[i];
             const rowNumber = i + 1; // Número de fila en Google Sheets (basado en 1)
 
-            // Verificar si la fila ya fue notificada en esta sesión del bot
-            if (notifiedErrorRows.has(rowNumber)) {
-                // console.log(`Fila ${rowNumber} ya notificada. Saltando.`);
-                continue; // Saltar esta fila si ya la procesamos
-            }
+            // Índices de las columnas: J es 9, K es 10
+            const errorColumnIndex = 9; // Columna J
+            const notifiedColumnIndex = 10; // Columna K
 
-            // Asegurarse de que la fila tiene suficientes columnas para acceder a la columna J (índice 9)
-            const errorColumnIndex = 9; // Columna J es el índice 9 (A=0, B=1, ..., J=9)
-            if (row.length > errorColumnIndex) {
-                const errorValue = row[errorColumnIndex] ? String(row[errorColumnIndex]).trim() : ''; // Obtener el valor de la columna J y limpiar espacios
+            // Asegurarse de que la fila tiene suficientes columnas para acceder a la columna J y K
+            const errorValue = row.length > errorColumnIndex ? (String(row[errorColumnIndex] || '')).trim() : ''; // Valor en columna J
+            const notifiedValue = row.length > notifiedColumnIndex ? (String(row[notifiedColumnIndex] || '')).trim() : ''; // Valor en columna K
 
-                // Si hay contenido en la columna J (ERROR)
-                if (errorValue) {
-                    console.log(`Error encontrado en la fila ${rowNumber}: "${errorValue}"`);
+            // Si hay contenido en la columna J (ERROR) Y la columna K está vacía (NO Notificado)
+            if (errorValue && !notifiedValue) {
+                console.log(`Error sin notificar encontrado en la fila ${rowNumber}: "${errorValue}"`);
 
-                    // Extraer datos relevantes de la fila (ajusta los índices según tus columnas A-F)
-                    const pedido = row[0] || 'N/A'; // Col A: N° de pedido (índice 0)
-                    const fecha = row[1] || 'N/A'; // Col B: Fecha (índice 1)
-                    const agenteName = row[2] || 'N/A'; // Col C: Agente que cargo la solicitud (índice 2)
-                    const numeroCaso = row[3] || 'N/A'; // Col D: Numero de caso (índice 3)
-                    const tipoSolicitud = row[4] || 'N/A'; // Col E: Solicitud (índice 4)
-                    const datosContacto = row[5] || 'N/A'; // Col F: Dirección/Telefono/Datos (índice 5)
-                    // Col J: ERROR (índice 9) - ya lo tenemos en errorValue
+                // Extraer datos relevantes de la fila (ajusta los índices según tus columnas A-F)
+                const pedido = row[0] || 'N/A'; // Col A: N° de pedido (índice 0)
+                const fecha = row[1] || 'N/A'; // Col B: Fecha (índice 1)
+                const agenteName = row[2] || 'N/A'; // Col C: Agente que cargo la solicitud (índice 2)
+                const numeroCaso = row[3] || 'N/A'; // Col D: Numero de caso (índice 3)
+                const tipoSolicitud = row[4] || 'N/A'; // Col E: Solicitud (índice 4)
+                const datosContacto = row[5] || 'N/A'; // Col F: Dirección/Telefono/Datos (índice 5)
+                // Col J: ERROR (índice 9) - ya lo tenemos en errorValue
+                // Col K: NOTIFICADO (índice 10) - ya lo tenemos en notifiedValue (sabemos que está vacío)
 
-                    // --- Intentar encontrar el usuario de Discord por nombre ---
-                    let mention = agenteName; // Por defecto, usar el nombre de la hoja si no encontramos al usuario
-                    try {
-                        // Buscar en los miembros del servidor por displayName o username
-                        const foundMember = guild.members.cache.find(member =>
-                            member.displayName === agenteName || member.user.username === agenteName
-                        );
+                // --- Intentar encontrar el usuario de Discord por nombre ---
+                let mention = agenteName; // Por defecto, usar el nombre de la hoja si no encontramos al usuario
+                try {
+                    // Buscar en los miembros del servidor por displayName o username
+                    const foundMember = guild.members.cache.find(member =>
+                        member.displayName === agenteName || member.user.username === agenteName
+                    );
 
-                        if (foundMember) {
-                            mention = `<@${foundMember.user.id}>`; // Usar la mención si se encuentra el miembro
-                            console.log(`Usuario de Discord encontrado para "${agenteName}": ${foundMember.user.tag}`);
-                        } else {
-                            console.warn(`No se encontró un usuario de Discord con displayName o username "${agenteName}" en el servidor.`);
-                             mention = `**${agenteName}** (Usuario no encontrado)`; // Indicar que no se encontró
-                        }
-                    } catch (findError) {
-                        console.error(`Error al buscar usuario de Discord por nombre "${agenteName}":`, findError);
-                        mention = `**${agenteName}** (Error al buscar usuario)`; // Indicar error en la búsqueda
+                    if (foundMember) {
+                        mention = `<@${foundMember.user.id}>`; // Usar la mención si se encuentra el miembro
+                        console.log(`Usuario de Discord encontrado para "${agenteName}": ${foundMember.user.tag}`);
+                    } else {
+                        console.warn(`No se encontró un usuario de Discord con displayName o username "${agenteName}" en el servidor.`);
+                         mention = `**${agenteName}** (Usuario no encontrado)`; // Indicar que no se encontró
                     }
+                } catch (findError) {
+                    console.error(`Error al buscar usuario de Discord por nombre "${agenteName}":`, findError);
+                    mention = `**${agenteName}** (Error al buscar usuario)`; // Indicar error en la búsqueda
+                }
 
 
-                    // --- Construir el mensaje de notificación ---
-                    const notificationMessage = `
+                // --- Construir el mensaje de notificación ---
+                const notificationMessage = `
 🚨 **Error detectado en la hoja de Casos** 🚨
 
 ${mention}, hay un error marcado en un caso que cargaste:
@@ -1095,17 +1105,37 @@ ${mention}, hay un error marcado en un caso que cargaste:
 Por favor, revisa la hoja para más detalles.
 `;
 
-                    // --- Enviar el mensaje al canal de casos ---
-                    try {
-                        await casesChannel.send(notificationMessage);
-                        console.log(`Notificación de error enviada para la fila ${rowNumber}.`);
-                        // Marcar la fila como notificada para no volver a enviar el mensaje en esta sesión
-                        notifiedErrorRows.add(rowNumber);
+                // --- Enviar el mensaje al canal de casos ---
+                try {
+                    await casesChannel.send(notificationMessage);
+                    console.log(`Notificación de error enviada para la fila ${rowNumber}.`);
 
-                    } catch (sendError) {
-                        console.error(`Error al enviar el mensaje de notificación para la fila ${rowNumber}:`, sendError);
-                        // Si falla el envío, no marcamos la fila como notificada para intentar de nuevo en la próxima verificación
-                    }
+                    // --- Marcar la fila como notificada en Google Sheets (Columna K) ---
+                    // Obtener la fecha y hora actual para la marca
+                     const now = new Date();
+                     const notificationTimestamp = now.toLocaleString('es-AR', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit',
+                        hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
+                     }).replace(/\//g, '-');
+
+                    const updateRange = `${sheetName}!K${rowNumber}`; // Rango específico para la celda K de la fila actual
+                    const updateValue = [[`Notificado ${notificationTimestamp}`]]; // Valor a escribir (en un array de arrays)
+
+                    console.log(`Marcando fila ${rowNumber} como notificada en rango ${updateRange} con valor: ${updateValue}`);
+
+                    await sheets.spreadsheets.values.update({
+                        spreadsheetId: spreadsheetIdCasos,
+                        range: updateRange,
+                        valueInputOption: 'RAW', // Escribir el valor tal cual
+                        resource: { values: updateValue },
+                    });
+                    console.log(`Fila ${rowNumber} marcada como notificada en Google Sheets.`);
+
+
+                } catch (sendOrUpdateError) {
+                    console.error(`Error al enviar el mensaje de notificación o marcar la fila ${rowNumber}:`, sendOrUpdateError);
+                    // Si falla el envío o la actualización, no hacemos nada para que se intente de nuevo en la próxima verificación
                 }
             }
         }
