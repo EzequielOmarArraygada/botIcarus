@@ -34,16 +34,18 @@ const client = new Client({
 // --- Variables de Entorno de Discord ---
 // Se leen de process.env después de importar 'dotenv/config'
 const discordToken = process.env.DISCORD_TOKEN;
-// Canales específicos donde se permiten los comandos
+// Canales específicos donde se permiten los comandos (usados para la restricción manual)
 const targetChannelIdFacA = process.env.TARGET_CHANNEL_ID_FAC_A; // Canal para /solicitud
 const targetChannelIdEnvios = process.env.TARGET_CHANNEL_ID_ENVIOS; // Canal para /tracking
-const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor también para permisos
+const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor también para permisos (aunque no se use para permisos automáticos ahora)
+const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/explicaciones
+
 
 // --- Variables de Entorno para IDs de Comandos ---
 // ¡Necesitarás obtener estos IDs después de desplegar los comandos!
 // Configura estas variables de entorno en Railway.
-const commandIdSolicitud = process.env.COMMAND_ID_SOLICITUD; // ID numérico del comando /solicitud
-const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
+const commandIdSolicitud = process.env.COMMAND_ID_SOLICITUD; // ID numérico del comando /solicitud (no usado en este código, pero se mantiene)
+const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking (no usado en este código, pero se mantiene)
 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH; // Encabezado de autorización para Andreani API
 
 
@@ -121,89 +123,105 @@ client.once('ready', async () => { // <-- Hacemos la función async para usar aw
     console.log(`Conectado a Discord.`);
 
     // --- Lógica para establecer permisos de comandos por canal ---
-    // Esto solo se ejecutará una vez cuando el bot inicie.
-    if (guildId && commandIdSolicitud && targetChannelIdFacA && commandIdTracking && targetChannelIdEnvios) {
-        try {
-            const guild = client.guilds.cache.get(guildId);
-            if (!guild) {
-                console.error(`Error: No se encontró el servidor con ID ${guildId}. No se pudieron establecer los permisos de comandos.`);
-                return; // Salir si no se encuentra el servidor
-            }
+    // Esta sección ha sido ELIMINADA para evitar el error ApplicationCommandPermissionsTokenMissing.
+    // La restricción de comandos ahora dependerá de la lógica manual en interactionCreate.
+    // La explicación de comandos por mensaje se restringe al canal de ayuda en messageCreate.
 
-            // Opcional: Obtener los comandos del servidor explícitamente antes de establecer permisos
-            // Esto ayuda a asegurar que el cache del guild está actualizado con los comandos
-            await guild.commands.fetch();
+    console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
 
-
-            // Definimos los permisos que queremos establecer
-            const permissions = [
-                {
-                    id: commandIdSolicitud, // ID del comando /solicitud
-                    permissions: [
-                        {
-                            id: targetChannelIdFacA, // ID del canal "facturas-a-pruebas"
-                            type: 2, // Tipo 2 = CHANNEL
-                            permission: true, // Permitir el comando en este canal
-                        },
-                        // Si quieres permitirlo en más canales, añade más objetos aquí
-                    ],
-                },
-                {
-                    id: commandIdTracking, // ID del comando /tracking
-                    permissions: [
-                        {
-                            id: targetChannelIdEnvios, // ID del canal "envios-pruebas"
-                            type: 2, // Tipo 2 = CHANNEL
-                            permission: true, // Permitir el comando en este canal
-                        },
-                         // Si quieres permitirlo en más canales, añade más objetos aquí
-                    ],
-                },
-                // Puedes añadir más objetos para otros comandos si tienes
-            ];
-
-            // Establecer los permisos en el servidor
-            // NOTA: Esto sobrescribirá cualquier permiso de comando existente para estos comandos en este servidor.
-            await guild.commands.permissions.set({ permissions });
-
-            console.log('Permisos de comandos de barra por canal establecidos correctamente.');
-
-        } catch (error) {
-            console.error('Error al establecer permisos de comandos de barra:', error);
-            console.error('Asegúrate de que el bot tiene el permiso "Manage Guild" (Administrar Servidor) en el servidor y que los IDs de comandos y canales son correctos.');
-        }
-    } else {
-        console.warn('Variables de entorno para permisos de comandos incompletas (GUILD_ID, COMMAND_ID_SOLICITUD, TARGET_CHANNEL_ID_FAC_A, COMMAND_ID_TRACKING, o TARGET_CHANNEL_ID_ENVIOS). No se establecerán los permisos de comandos por canal.');
-    }
 
     // Puedes añadir aquí lógica para verificar que los comandos estén registrados globalmente si quieres, pero ya lo haces con el script deploy-commands.js
 });
 
-// --- Manejar Mensajes Normales (para recibir archivos adjuntos) ---
-// Este listener ahora es crucial para el flujo alternativo de archivos.
-// NOTA: Este listener se activa para *cualquier* mensaje en los canales donde el bot tiene permisos.
-// Si quieres restringir la recepción de adjuntos a un canal específico,
-// puedes añadir una verificación similar a la de los comandos aquí también.
+// --- Manejar Mensajes Normales (para recibir archivos adjuntos Y explicaciones de comandos) ---
 client.on('messageCreate', async message => {
     // Ignorar mensajes de bots (incluido el nuestro)
     if (message.author.bot) {
         return;
     }
 
-    // Opcional: Restringir la recepción de adjuntos al canal de solicitudes
-    if (targetChannelIdFacA && message.channelId !== targetChannelIdFacA) {
-         // console.log(`Mensaje recibido fuera del canal objetivo para adjuntos: ${message.content}`);
-         return; // Ignorar mensajes fuera del canal objetivo para adjuntos
+    // --- Restringir la lógica de explicaciones de comandos al canal de ayuda ---
+    // Solo procesar mensajes para explicaciones si provienen del canal de ayuda configurado
+    if (helpChannelId && message.channelId === helpChannelId) {
+        // Convertir el mensaje a minúsculas para hacer la detección menos sensible a mayúsculas/minúsculas
+        const messageContentLower = message.content.toLowerCase();
+
+        // --- Lógica para responder a preguntas sobre comandos ---
+        // Ampliamos las frases de detección
+        if (
+            messageContentLower.includes('como usar /solicitud') ||
+            messageContentLower.includes('explicame /solicitud') ||
+            messageContentLower === '/solicitud ayuda' ||
+            messageContentLower.includes('ayuda solicitud') ||
+            messageContentLower.includes('explica solicitud') ||
+            messageContentLower.includes('info solicitud') ||
+            messageContentLower.includes('que hace /solicitud') || // Nuevas frases
+            messageContentLower.includes('para que sirve /solicitud')
+        ) {
+            const helpMessage = `
+Para usar el comando **/solicitud**:
+
+Este comando abre un formulario (Modal) para registrar una nueva solicitud.
+
+1.  Escribe \`/solicitud\` en el canal [menciona el canal si aplica, ej: <#${targetChannelIdFacA || 'ID_CANAL_SOLICITUDES'}>].
+2.  Completa los datos solicitados en el formulario que aparecerá (Número de Pedido, Número de Caso, Email del Cliente, Detalle de la Solicitud).
+3.  Haz clic en "Enviar".
+4.  Si necesitas adjuntar archivos para esta solicitud, envíalos en un **mensaje SEPARADO** aquí mismo en este canal [o menciona el canal de solicitudes si es diferente].
+`;
+            await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
+            return; // Salir del listener después de responder
+        }
+
+        if (
+            messageContentLower.includes('como usar /tracking') ||
+            messageContentLower.includes('explicame /tracking') ||
+            messageContentLower === '/tracking ayuda' ||
+            messageContentLower.includes('ayuda tracking') ||
+            messageContentLower.includes('explica tracking') ||
+            messageContentLower.includes('info tracking') ||
+            messageContentLower.includes('seguimiento andreani') ||
+            messageContentLower.includes('que hace /tracking') || // Nuevas frases
+            messageContentLower.includes('para que sirve /tracking') ||
+            messageContentLower.includes('rastrear envio') ||
+            messageContentLower.includes('consultar envio')
+        ) {
+            const helpMessage = `
+Para usar el comando **/tracking**:
+
+Este comando te permite consultar el estado actual de un envío de Andreani.
+
+1.  Escribe \`/tracking numero:\` seguido del número de seguimiento de Andreani.
+2.  Ejemplo: \`/tracking numero: ABC123456789\`
+3.  El bot responderá con el estado actual y el historial del envío.
+`;
+            await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
+            return; // Salir del listener después de responder
+        }
+
+        // Si el mensaje está en el canal de ayuda pero no es una pregunta de comando reconocida
+        // Puedes añadir una respuesta genérica aquí si quieres, o simplemente ignorarlo.
+        // await message.reply({ content: 'No entendí tu pregunta sobre comandos. Intenta preguntar por un comando específico como "/solicitud ayuda" o "/tracking ayuda".', ephemeral: true });
+        // return; // Salir del listener
     }
 
 
-    console.log(`Mensaje recibido en el canal objetivo de ${message.author.tag} con ${message.attachments.size} adjuntos.`);
+    // --- Lógica existente para recibir archivos adjuntos ---
+    // Esta lógica solo se ejecutará si el mensaje no fue una pregunta sobre un comando
+    // Y si el mensaje no provino del canal de ayuda (a menos que sea el mismo canal)
 
-    // --- Verificar si el usuario está esperando para enviar adjuntos ---
+    // Opcional: Restringir la recepción de adjuntos al canal de solicitudes (si es diferente al canal de ayuda)
+    // Si el canal de ayuda es el mismo que el canal de solicitudes, esta verificación ya se hizo arriba.
+    if (targetChannelIdFacA && message.channelId !== targetChannelIdFacA && message.channelId !== helpChannelId) {
+         // console.log(`Mensaje recibido fuera de los canales objetivo: ${message.content}`);
+         return; // Ignorar mensajes fuera de los canales objetivo para adjuntos
+    }
+
+    // Si el mensaje está en el canal de ayuda Y es el mismo que el canal de solicitudes
+    // O si el mensaje está en el canal de solicitudes Y no es el canal de ayuda
+    // Y si el usuario está esperando adjuntos Y el mensaje tiene adjuntos
     const userId = message.author.id;
     const pendingRequest = waitingForAttachments.get(userId);
 
-    // Si el usuario está esperando adjuntos Y el mensaje tiene adjuntos
     if (pendingRequest && message.attachments.size > 0) {
         console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingRequest.pedido}. Procesando...`);
 
@@ -323,7 +341,7 @@ client.on('interactionCreate', async interaction => {
              if (targetChannelIdFacA && interaction.channelId !== targetChannelIdFacA) {
                   // Este mensaje solo se mostrará si la restricción de permisos de Discord falla por alguna razón
                   await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdFacA}>.`, ephemeral: true });
-                  return; // Salir del handler si no es el canal correcto
+                  return; // Salir del handler if no es el canal correcto
              }
 
              // NOTA: Ya NO guardamos attachments aquí, ya que el usuario los enviará después.
@@ -352,7 +370,7 @@ client.on('interactionCreate', async interaction => {
              if (targetChannelIdEnvios && interaction.channelId !== targetChannelIdEnvios) {
                  // Este mensaje solo se mostrará si la restricción de permisos de Discord falla por alguna razón
                  await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdEnvios}>.`, ephemeral: true });
-                 return; // Salir del handler si no es el canal correcto
+                 return; // Salir del handler if no es el canal correcto
              }
 
 
@@ -665,7 +683,7 @@ client.on('interactionCreate', async interaction => {
                  console.log('Mensaje de error de sumisión de modal enviado.');
 
                  // Si hubo un error al guardar en Sheet, nos aseguramos de que el usuario no quede en estado de espera
-                 waitingForAttachments.delete(interaction.user.id);
+                 waitingForAttachments.delete(interaction.user.id); // Asegurarse de que no esté en espera
              }
 
         } else {
