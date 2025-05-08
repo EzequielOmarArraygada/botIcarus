@@ -148,6 +148,14 @@ if (isNaN(ERROR_CHECK_INTERVAL) || ERROR_CHECK_INTERVAL < 10000) { // Mínimo 10
     ERROR_CHECK_INTERVAL = 300000; // Reset a 5 minutos if es inválido
 }
 
+// --- Opciones para el Select Menu de Tipo de Solicitud ---
+const tipoSolicitudOptions = [ // <<-- DECLARACIÓN DE LA VARIABLE AÑADIDA AQUÍ
+    { label: 'CAMBIO DEFECTUOSO', value: 'CAMBIO DEFECTUOSO' },
+    { label: 'CAMBIO ESTETICO', value: 'CAMBIO ESTETICO' },
+    { label: 'DEVOLUCION', value: 'DEVOLUCION' },
+    { label: 'OTRO', value: 'OTRO' },
+];
+
 
 // --- Eventos del Bot de Discord ---
 
