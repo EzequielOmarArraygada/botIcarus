@@ -151,9 +151,10 @@ if (isNaN(ERROR_CHECK_INTERVAL) || ERROR_CHECK_INTERVAL < 10000) { // Mínimo 10
 // --- Opciones para el Select Menu de Tipo de Solicitud ---
 const tipoSolicitudOptions = [ // <<-- DECLARACIÓN DE LA VARIABLE AÑADIDA AQUÍ
     { label: 'CAMBIO DEFECTUOSO', value: 'CAMBIO DEFECTUOSO' },
-    { label: 'CAMBIO ESTETICO', value: 'CAMBIO ESTETICO' },
-    { label: 'DEVOLUCION', value: 'DEVOLUCION' },
-    { label: 'OTRO', value: 'OTRO' },
+    { label: 'CAMBIO INCORRECTO', value: 'CAMBIO INCORRECTO' },
+    { label: 'RETIRO ARREPENTIMIENTO', value: 'RETIRO ARREPENTIMIENTO' },
+    { label: 'PRODUCTO INCOMPLETO', value: 'PRODUCTO INCOMPLETO' },
+    { label: 'OTROS', value: 'OTROS' },
 ];
 
 
