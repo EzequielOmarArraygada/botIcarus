@@ -44,6 +44,7 @@ const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor también
 // Configura estas variables de entorno en Railway.
 const commandIdSolicitud = process.env.COMMAND_ID_SOLICITUD; // ID numérico del comando /solicitud
 const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
+const andreaniAuthHeader = process.env.ANDREANI_API_AUTH; // Encabezado de autorización para Andreani API
 
 
 // --- Configuración de Google Sheets Y Google Drive ---
@@ -128,6 +129,11 @@ client.once('ready', async () => { // <-- Hacemos la función async para usar aw
                 console.error(`Error: No se encontró el servidor con ID ${guildId}. No se pudieron establecer los permisos de comandos.`);
                 return; // Salir si no se encuentra el servidor
             }
+
+            // Opcional: Obtener los comandos del servidor explícitamente antes de establecer permisos
+            // Esto ayuda a asegurar que el cache del guild está actualizado con los comandos
+            await guild.commands.fetch();
+
 
             // Definimos los permisos que queremos establecer
             const permissions = [
@@ -370,12 +376,12 @@ client.on('interactionCreate', async interaction => {
 
              try {
                  // --- OBTENER EL ENCABEZADO DE AUTORIZACIÓN DESDE VARIABLES DE ENTORNO ---
-                 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH;
-
+                 // Ya verificamos si andreaniAuthHeader existe al inicio del evento ready,
+                 // pero lo verificamos de nuevo aquí para estar seguros antes de usarlo.
                  if (!andreaniAuthHeader) {
-                      console.error("Error CRÍTICO: La variable de entorno ANDREANI_API_AUTH no está configurada.");
-                      await interaction.editReply({ content: '❌ Error de configuración del bot: La clave de autenticación para Andreani no está configurada.', ephemeral: true });
-                      return; // Salir si no hay clave de autenticación
+                      console.error("Error: ANDREANI_API_AUTH no está configurada. No se puede consultar el tracking.");
+                       await interaction.editReply({ content: '❌ Error de configuración del bot: La clave de autenticación para Andreani no está configurada.', ephemeral: true });
+                       return;
                  }
 
 
@@ -732,7 +738,7 @@ function buildSolicitudModal() {
 /**
  * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
  * Si no existe, la crea.
- * @param {object} drive - Instancia de la API de Google Drive (obtenida de google.drive()).
+ * @param {object} drive - Instancia de la API de Google Drive.
  * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
  * @param {string} folderName - Nombre de la carpeta a buscar/crear.
  * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
