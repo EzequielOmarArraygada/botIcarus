@@ -10,8 +10,10 @@ import {
     TextInputBuilder,   // Para construir campos de texto en el modal
     ActionRowBuilder,    // Para organizar componentes en el modal
     ApplicationCommandOptionType, // Importar ApplicationCommandOptionOptionType
-    StringSelectMenuBuilder, // <-- NUEVO: Para construir Select Menus de texto
-    StringSelectMenuOptionBuilder // <-- NUEVO: Para construir opciones del Select Menu
+    StringSelectMenuBuilder, // Para construir Select Menus de texto
+    StringSelectMenuOptionBuilder, // Para construir opciones del Select Menu
+    ButtonBuilder, // <-- NUEVO: Para construir botones
+    ButtonStyle // <-- NUEVO: Para definir estilos de botones
 } from 'discord.js';
 
 // Importaciones de Google APIs y utilidades
@@ -122,14 +124,13 @@ if (!parentDriveFolderId) {
 }
 
 
-// --- Manejo de Estado para Archivos Adjuntos Posteriores (para Factura A) ---
-// Y para el estado del Modal de Casos (paso 1 de 2)
+// --- Manejo de Estado para Flujos Multi-paso ---
 // Usaremos un Map para rastrear a los usuarios que han iniciado un flujo multi-paso.
 // Clave: ID del usuario de Discord (string)
 // Valor: Un objeto con información pendiente.
 // Para Factura A: { type: 'facturaA', pedido: '...', timestamp: Date } -> Esperando adjuntos
-// Para Casos: { type: 'caso', paso: 1, tipoSolicitud: '...' } -> Esperando sumisión del Modal
-const userPendingData = new Map(); // Usar mapa renombrado
+// Para Casos: { type: 'caso', paso: 1 (esperando select), paso: 2 (esperando modal), tipoSolicitud: '...' }
+const userPendingData = new Map();
 
 
 // --- Opciones fijas para el tipo de solicitud en Casos ---
@@ -206,8 +207,9 @@ Este comando inicia el proceso para registrar un nuevo caso de cambio o devoluci
 
 1.  Escribe \`/agregar-caso\` en el canal [menciona el canal si aplica, ej: <#${targetChannelIdCasos || 'ID_CANAL_CASOS'}>].
 2.  El bot te enviará un mensaje con un desplegable para que elijas el **Tipo de Solicitud**.
-3.  Después de elegir el tipo, el bot te presentará un formulario (Modal) para completar los demás datos (Número de Pedido, Número de Caso, Dirección/Teléfono/Datos).
-4.  Completa el formulario y haz clic en "Enviar".
+3.  Después de elegir el tipo, haz clic en el botón "Completar Detalles" que aparecerá.
+4.  El bot te presentará un formulario (Modal) para completar los demás datos (Número de Pedido, Número de Caso, Dirección/Teléfono/Datos).
+5.  Completa el formulario y haz clic en "Enviar".
 `;
             await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
             return; // Salir del listener después de responder
@@ -339,7 +341,7 @@ Este comando inicia el proceso para registrar un nuevo caso de cambio o devoluci
 });
 
 
-// --- Manejar Interacciones (Comandos de Barra, Sumisiones de Modals, Select Menus, etc.) ---
+// --- Manejar Interacciones (Comandos de Barra, Sumisiones de Modals, Select Menus, Buttons, etc.) ---
 client.on('interactionCreate', async interaction => {
     if (interaction.user.bot) return; // Ignorar interacciones de bots
 
@@ -581,9 +583,6 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId === 'casoTipoSolicitudSelect') { // CUSTOM ID del Select Menu
             console.log(`Selección en Select Menu 'casoTipoSolicitudSelect' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-            // Deferir la actualización del mensaje del Select Menu mientras procesamos
-            await interaction.deferUpdate();
-
             const userId = interaction.user.id;
             const pendingData = userPendingData.get(userId); // Usar mapa renombrado
 
@@ -593,43 +592,89 @@ client.on('interactionCreate', async interaction => {
                 console.log(`Tipo de Solicitud seleccionado: ${selectedTipoSolicitud}`);
 
                 // Actualizar el estado pendiente del usuario con el tipo de solicitud seleccionado
-                userPendingData.set(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud }); // Usar mapa renombrado
+                userPendingData.set(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud, interactionId: interaction.id }); // <-- Guardar interactionId para followUp/editReply
 
-                // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO (Paso 2) !!!
+
+                // --- Responder al Select Menu: Editar el mensaje original y añadir un botón ---
                 try {
-                    const modal = buildCasoModal(); // Función que crea el objeto Modal para casos
+                    // Crear el botón para completar los detalles
+                    const completeDetailsButton = new ButtonBuilder()
+                        .setCustomId('completeCasoDetailsButton') // ID único para este botón
+                        .setLabel('Completar Detalles del Caso')
+                        .setStyle(ButtonStyle.Primary); // Estilo del botón
 
-                    // NOTA: La forma correcta es mostrar el modal directamente después de deferUpdate
-                    // No necesitas un followUp con componentes antes de showModal.
-                    await interaction.showModal(modal);
-                    console.log('Modal de registro de caso (Paso 2) mostrado al usuario.');
+                    const buttonActionRow = new ActionRowBuilder().addComponents(completeDetailsButton);
 
-                    // Opcional: Editar el mensaje original del Select Menu para indicar que se completó
-                    // Usamos followUp para enviar un mensaje adicional después del modal si es necesario,
-                    // o editamos la respuesta original del Select Menu.
-                     await interaction.editReply({ // Editar la respuesta original del Select Menu
-                         content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Por favor, completa el formulario que apareció.`,
-                         components: [], // Eliminar el Select Menu del mensaje original
-                         ephemeral: true,
-                     });
-
+                    // Editar el mensaje original que contenía el Select Menu
+                    await interaction.update({ // Usar update() para editar el mensaje original
+                        content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Haz clic en el botón para completar los detalles.`,
+                        components: [buttonActionRow], // Reemplazar el Select Menu con el botón
+                        ephemeral: true, // Mantener como efímero
+                    });
+                    console.log('Mensaje del Select Menu editado y botón "Completar Detalles" mostrado.');
 
                 } catch (error) {
-                    console.error('Error al mostrar el Modal de registro de caso (Paso 2):', error);
-                    // Usar followUp para enviar un mensaje de error después de deferUpdate
-                    await interaction.followUp({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
+                    console.error('Error al responder al Select Menu o mostrar el botón:', error);
+                    // Usar followUp para enviar un mensaje de error si update() falla
+                    await interaction.followUp({ content: 'Hubo un error al procesar tu selección. Por favor, intenta usar el comando /agregar-caso de nuevo.', ephemeral: true });
                     userPendingData.delete(userId); // Limpiar estado pendiente si falla
                 }
 
             } else {
                 // Si el usuario interactuó con el Select Menu pero no estaba en el estado esperado
                  console.warn(`Interacción de Select Menu inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
-                 // Usar followUp para enviar un mensaje de error después de deferUpdate
+                 // Usar followUp para enviar un mensaje de error si la interacción es inesperada
                  await interaction.followUp({ content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
                  userPendingData.delete(userId); // Limpiar estado por si acaso
             }
         }
         // Manejar otros Select Menus si los tienes
+    }
+
+    // --- Manejar Interacciones de Botón ---
+    if (interaction.isButton()) { // <-- NUEVO MANEJADOR para Botones
+        // Verifica si la interacción es de nuestro botón para completar detalles del caso
+        if (interaction.customId === 'completeCasoDetailsButton') { // <-- CUSTOM ID del botón
+            console.log(`Clic en botón 'completeCasoDetailsButton' recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+
+            const userId = interaction.user.id;
+            const pendingData = userPendingData.get(userId); // Usar mapa renombrado
+
+            // Verificar si el usuario estaba en el paso 2 del flujo de casos (esperando el modal)
+            if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
+
+                // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO (Paso 3) !!!
+                try {
+                    const modal = buildCasoModal(); // Función que crea el objeto Modal para casos
+
+                    // showModal() debe ser la respuesta a la interacción del BOTÓN
+                    await interaction.showModal(modal);
+                    console.log('Modal de registro de caso (Paso 3) mostrado al usuario.');
+
+                    // Opcional: Editar el mensaje del botón para indicar que el modal se mostró
+                    await interaction.editReply({
+                        content: `Tipo de Solicitud seleccionado: **${pendingData.tipoSolicitud}**. Por favor, completa el formulario que apareció.`,
+                        components: [], // Eliminar el botón del mensaje
+                        ephemeral: true,
+                    });
+
+
+                } catch (error) {
+                    console.error('Error al mostrar el Modal de registro de caso (Paso 3):', error);
+                    // Usar followUp para enviar un mensaje de error si showModal falla
+                    await interaction.followUp({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
+                    userPendingData.delete(userId); // Limpiar estado pendiente si falla
+                }
+
+            } else {
+                // Si el usuario hizo clic en el botón pero no estaba en el estado esperado
+                 console.warn(`Clic en botón inesperado de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
+                 // Usar followUp para enviar un mensaje de error si la interacción es inesperada
+                 await interaction.followUp({ content: 'Este botón no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
+                 userPendingData.delete(userId); // Limpiar estado por si acaso
+            }
+        }
+        // Manejar otros botones si los tienes
     }
 
 
@@ -828,7 +873,6 @@ client.on('interactionCreate', async interaction => {
                      pedido,              // Col A
                      fechaHoraFormateada, // Col B
                      agenteDiscord,       // Col C <-- USANDO displayName
-                     `#${numeroCaso}`,    // Col D (con # añadido si lo deseas)
                      tipoSolicitud,       // Col E <-- USANDO VALOR DEL SELECT MENU
                      datosContacto        // Col F
                  ];
@@ -909,8 +953,8 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- Manejar otros tipos de interacciones (Botones, etc.) ---
-    // Si agregas botones, los manejarías aquí con interaction.isButton()
+    // --- Manejar otros tipos de interacciones (Select Menus, etc.) ---
+    // Si agregas select menus adicionales, los manejarías aquí con interaction.isSelectMenu()
 });
 
 
