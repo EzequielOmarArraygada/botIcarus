@@ -51,7 +51,7 @@ const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/expl
 // Configura estas variables de entorno en Railway.
 const commandIdFacturaA = process.env.COMMAND_ID_FACTURA_A; // ID numérico del comando /factura-a
 const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
-const commandIdAgregarCaso = process.env.COMMAND_ID_AGREGAR_CASO; // <-- VARIABLE ACTUALIZADA: ID numérico del comando /agregar-caso
+const commandIdAgregarCaso = process.env.COMMAND_ID_AGREGAR_CASO; // VARIABLE ACTUALIZADA: ID numérico del comando /agregar-caso
 
 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH; // Encabezado de autorización para Andreani API
 
@@ -129,7 +129,7 @@ if (!parentDriveFolderId) {
 // Valor: Un objeto con información pendiente.
 // Para Factura A: { type: 'facturaA', pedido: '...', timestamp: Date } -> Esperando adjuntos
 // Para Casos: { type: 'caso', paso: 1, tipoSolicitud: '...' } -> Esperando sumisión del Modal
-const userPendingData = new Map(); // <-- RENOMBRADO
+const userPendingData = new Map(); // Usar mapa renombrado
 
 
 // --- Opciones fijas para el tipo de solicitud en Casos ---
@@ -534,7 +534,7 @@ client.on('interactionCreate', async interaction => {
              await interaction.editReply({ content: trackingInfo, ephemeral: false }); // ephemeral: false para que todos vean el resultado
              console.log('Respuesta de tracking enviada.');
 
-        } else if (interaction.commandName === 'agregar-caso') { // <-- MANEJADOR ACTUALIZADO PARA /agregar-caso
+        } else if (interaction.commandName === 'agregar-caso') { // MANEJADOR ACTUALIZADO PARA /agregar-caso
             console.log(`Comando /agregar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
             // --- Restricción de canal para /agregar-caso ---
@@ -545,7 +545,7 @@ client.on('interactionCreate', async interaction => {
 
             // --- Iniciar el flujo de 2 pasos: Mostrar Select Menu para Tipo de Solicitud ---
             try {
-                const selectMenu = buildTipoSolicitudSelectMenu(); // <-- NUEVA FUNCIÓN para el Select Menu
+                const selectMenu = buildTipoSolicitudSelectMenu(); // Función para el Select Menu
                 const actionRow = new ActionRowBuilder().addComponents(selectMenu);
 
                 // Guardar el estado pendiente del usuario, indicando que está en el paso 1 del flujo de casos
@@ -576,9 +576,9 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- Manejar Interacciones de Select Menu ---
-    if (interaction.isStringSelectMenu()) { // <-- NUEVO MANEJADOR para Select Menus
+    if (interaction.isStringSelectMenu()) { // NUEVO MANEJADOR para Select Menus
         // Verifica si la interacción es de nuestro Select Menu de Tipo de Solicitud
-        if (interaction.customId === 'casoTipoSolicitudSelect') { // <-- CUSTOM ID del Select Menu
+        if (interaction.customId === 'casoTipoSolicitudSelect') { // CUSTOM ID del Select Menu
             console.log(`Selección en Select Menu 'casoTipoSolicitudSelect' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
             // Deferir la actualización del mensaje del Select Menu mientras procesamos
@@ -598,30 +598,25 @@ client.on('interactionCreate', async interaction => {
                 // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO (Paso 2) !!!
                 try {
                     const modal = buildCasoModal(); // Función que crea el objeto Modal para casos
-                    // showModal() debe ser la respuesta a la interacción del Select Menu
-                    await interaction.followUp({ // Usar followUp después de deferUpdate
-                        content: 'Por favor, completa los detalles del caso:', // Mensaje antes del modal
-                        ephemeral: true, // El mensaje y el modal son efímeros
-                        components: modal.components, // Pasar los componentes del modal
-                        // NOTA: Discord.js v14+ maneja showModal() directamente después de followUp/editReply
-                        // No necesitas pasar 'modal' como objeto completo aquí, solo los componentes si es necesario,
-                        // pero showModal() es el método correcto para mostrar el modal.
-                        // La forma correcta es usar interaction.showModal() después de deferUpdate.
-                    });
-                    // La forma correcta es mostrar el modal directamente después de deferUpdate
+
+                    // NOTA: La forma correcta es mostrar el modal directamente después de deferUpdate
+                    // No necesitas un followUp con componentes antes de showModal.
                     await interaction.showModal(modal);
                     console.log('Modal de registro de caso (Paso 2) mostrado al usuario.');
 
                     // Opcional: Editar el mensaje original del Select Menu para indicar que se completó
-                    await interaction.editReply({
-                        content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Por favor, completa el formulario que apareció.`,
-                        components: [], // Eliminar el Select Menu del mensaje original
-                        ephemeral: true,
-                    });
+                    // Usamos followUp para enviar un mensaje adicional después del modal si es necesario,
+                    // o editamos la respuesta original del Select Menu.
+                     await interaction.editReply({ // Editar la respuesta original del Select Menu
+                         content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Por favor, completa el formulario que apareció.`,
+                         components: [], // Eliminar el Select Menu del mensaje original
+                         ephemeral: true,
+                     });
 
 
                 } catch (error) {
                     console.error('Error al mostrar el Modal de registro de caso (Paso 2):', error);
+                    // Usar followUp para enviar un mensaje de error después de deferUpdate
                     await interaction.followUp({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
                     userPendingData.delete(userId); // Limpiar estado pendiente si falla
                 }
@@ -629,6 +624,7 @@ client.on('interactionCreate', async interaction => {
             } else {
                 // Si el usuario interactuó con el Select Menu pero no estaba en el estado esperado
                  console.warn(`Interacción de Select Menu inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
+                 // Usar followUp para enviar un mensaje de error después de deferUpdate
                  await interaction.followUp({ content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
                  userPendingData.delete(userId); // Limpiar estado por si acaso
             }
@@ -976,7 +972,7 @@ function buildFacturaAModal() {
  * Función para construir el Select Menu del Tipo de Solicitud de Caso.
  * @returns {StringSelectMenuBuilder} - El objeto Select Menu listo para ser usado en un mensaje.
  */
-function buildTipoSolicitudSelectMenu() { // <-- NUEVA FUNCIÓN para el Select Menu
+function buildTipoSolicitudSelectMenu() { // Función para el Select Menu
     const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('casoTipoSolicitudSelect') // ID único para identificar este Select Menu
         .setPlaceholder('Selecciona el tipo de solicitud...'); // Texto que se muestra antes de seleccionar
