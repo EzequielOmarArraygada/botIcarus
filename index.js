@@ -692,12 +692,12 @@ client.on('interactionCreate', async interaction => {
                      const headerRow = rows[0]; // La primera fila son los encabezados
                      // Buscar el índice de la columna "Número de pedido" (insensible a mayúsculas/minúsculas y espacios)
                      const pedidoColumnIndex = headerRow.findIndex(header =>
-                          header && String(header).trim().toLowerCase() === 'n° de pedido'
+                          header && String(header).trim().toLowerCase() === 'Número de pedido'
                      );
 
                      if (pedidoColumnIndex === -1) {
-                         console.warn(`No se encontró la columna "N° de pedido" en la pestaña "${sheetName}".`);
-                         searchSummary += `⚠️ No se encontró la columna "N° de pedido" en la pestaña "${sheetName}".\n`;
+                         console.warn(`No se encontró la columna "Número de pedido" en la pestaña "${sheetName}".`);
+                         searchSummary += `⚠️ No se encontró la columna "Número de pedido" en la pestaña "${sheetName}".\n`;
                          continue; // Saltar a la siguiente pestaña si no se encuentra la columna
                      }
 
