@@ -873,6 +873,7 @@ client.on('interactionCreate', async interaction => {
                      pedido,              // Col A
                      fechaHoraFormateada, // Col B
                      agenteDiscord,       // Col C <-- USANDO displayName
+                     numeroCaso,          // Col D 
                      tipoSolicitud,       // Col E <-- USANDO VALOR DEL SELECT MENU
                      datosContacto        // Col F
                  ];
