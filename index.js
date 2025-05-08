@@ -253,7 +253,7 @@ Para usar el comando **/buscar-caso**:
 
 Este comando se utilizar para buscar casos por número de pedido en la planilla de Sheets.
 
-1.  Escribe \`/agregar-caso\` **únicamente** en el canal <#${targetChannelIdBuscarCaso || 'ID_CANAL_CASOS'}>.
+1.  Escribe \`/buscar-caso\` **únicamente** en el canal <#${targetChannelIdBuscarCaso || 'ID_CANAL_CASOS'}>.
 2.  Seguido al comando ingresa el número de pedido y envia el mensaje.
 3.  El BOT te devolverá todos los casos cargados con ese número de pedido.
  
