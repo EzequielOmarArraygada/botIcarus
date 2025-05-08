@@ -45,6 +45,9 @@ const guildId = process.env.GUILD_ID; // Necesitamos el ID del servidor
 const targetChannelIdFacA = process.env.TARGET_CHANNEL_ID_FAC_A; // Canal para /factura-a
 const targetChannelIdEnvios = process.env.TARGET_CHANNEL_ID_ENVIOS; // Canal para /tracking
 const targetChannelIdCasos = process.env.TARGET_CHANNEL_ID_CASOS; // Canal para /agregar-caso Y NOTIFICACIONES DE ERROR
+// NUEVA VARIABLE: Canal donde se permite el comando /buscar-caso
+const targetChannelIdBuscarCaso = process.env.TARGET_CHANNEL_ID_BUSCAR_CASO;
+
 
 const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/explicaciones (si se mantiene)
 
@@ -55,6 +58,9 @@ const helpChannelId = process.env.HELP_CHANNEL_ID; // ID del canal de ayuda/expl
 const commandIdFacturaA = process.env.COMMAND_ID_FACTURA_A; // ID numérico del comando /factura-a
 const commandIdTracking = process.env.COMMAND_ID_TRACKING;   // ID numérico del comando /tracking
 const commandIdAgregarCaso = process.env.COMMAND_ID_AGREGAR_CASO; // VARIABLE ACTUALIZADA: ID numérico del comando /agregar-caso
+// NUEVA VARIABLE: ID numérico del comando /buscar-caso
+const commandIdBuscarCaso = process.env.COMMAND_ID_BUSCAR_CASO;
+
 
 const andreaniAuthHeader = process.env.ANDREANI_API_AUTH; // Encabezado de autorización para Andreani API
 
@@ -107,9 +113,16 @@ const sheetRangeFacA = process.env.GOOGLE_SHEET_RANGE_FAC_A;
 // Variables para la hoja de Casos/Devoluciones
 const spreadsheetIdCasos = process.env.GOOGLE_SHEET_ID_CASOS;
 const sheetRangeCasos = process.env.GOOGLE_SHEET_RANGE_CASOS; // Rango para agregar nuevos casos (A:F)
-// NUEVA VARIABLE: Rango para leer datos, incluyendo la columna de error (hasta J)
-// ¡ACTUALIZADO! Ahora debe incluir hasta la columna K para el estado de notificación
+// Rango para leer datos, incluyendo la columna de error (hasta J) y Notificado (K)
+// ¡Recuerda actualizar GOOGLE_SHEET_RANGE_CASOS_READ en Railway para que incluya la columna K!
 const sheetRangeCasosRead = process.env.GOOGLE_SHEET_RANGE_CASOS_READ; // Por ejemplo: 'SOLICITUDES BGH 2025!A:K'
+
+// NUEVAS VARIABLES para el comando /buscar-caso
+// ID del Google Sheet donde buscar casos (puede ser el mismo que spreadsheetIdCasos)
+const spreadsheetIdBuscarCaso = process.env.GOOGLE_SHEET_SEARCH_SHEET_ID || spreadsheetIdCasos; // Usar el de casos como fallback
+// Lista de nombres de pestañas (sheets) donde buscar, separadas por coma (ej: 'Pestaña1,Pestaña2,Historial')
+const sheetsToSearch = process.env.GOOGLE_SHEET_SEARCH_SHEETS ? process.env.GOOGLE_SHEET_SEARCH_SHEETS.split(',').map(s => s.trim()) : [];
+
 
 // Validaciones básicas para variables de Google
 if (!spreadsheetIdFacA || !sheetRangeFacA) {
@@ -121,6 +134,10 @@ if (!spreadsheetIdCasos || !sheetRangeCasos) {
 // NUEVA VALIDACIÓN para la variable de rango de lectura de errores
 if (!sheetRangeCasosRead) {
     console.warn("Advertencia: Variable de entorno GOOGLE_SHEET_RANGE_CASOS_READ no configurada. La funcionalidad de notificación de errores de casos no funcionará.");
+}
+// NUEVA VALIDACIÓN para las variables de búsqueda de casos
+if (!spreadsheetIdBuscarCaso || sheetsToSearch.length === 0) {
+    console.warn("Advertencia: Variables de entorno para la búsqueda de casos incompletas (GOOGLE_SHEET_SEARCH_SHEET_ID o GOOGLE_SHEET_SEARCH_SHEETS). El comando /buscar-caso no funcionará.");
 }
 
 
@@ -142,7 +159,7 @@ const userPendingData = new Map();
 // REMOVIDO: Set para rastrear las filas de error ya notificadas (ahora se guarda en la hoja)
 // const notifiedErrorRows = new Set();
 
-// NUEVA VARIABLE: Intervalo de tiempo entre verificaciones de errores en la hoja (en milisegundos)
+// Intervalo de tiempo entre verificaciones de errores en la hoja (en milisegundos)
 let ERROR_CHECK_INTERVAL = process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000; // Default: 5 minutos (300000 ms)
 if (isNaN(ERROR_CHECK_INTERVAL) || ERROR_CHECK_INTERVAL < 10000) { // Mínimo 10 segundos
     console.warn(`ERROR_CHECK_INTERVAL_MS configurado incorrectamente o muy bajo (${process.env.ERROR_CHECK_INTERVAL_MS}). Usando valor por defecto: ${ERROR_CHECK_INTERVAL} ms.`);
@@ -150,7 +167,7 @@ if (isNaN(ERROR_CHECK_INTERVAL) || ERROR_CHECK_INTERVAL < 10000) { // Mínimo 10
 }
 
 // --- Opciones para el Select Menu de Tipo de Solicitud ---
-const tipoSolicitudOptions = [ // <<-- DECLARACIÓN DE LA VARIABLE AÑADIDA AQUÍ
+const tipoSolicitudOptions = [
     { label: 'CAMBIO DEFECTUOSO', value: 'CAMBIO DEFECTUOSO' },
     { label: 'CAMBIO INCORRECTO', value: 'CAMBIO INCORRECTO' },
     { label: 'RETIRO ARREPENTIMIENTO', value: 'RETIRO ARREPENTIMIENTO' },
@@ -169,7 +186,7 @@ client.once('ready', async () => {
     // La lógica de establecimiento automático de permisos de comandos por canal fue omitida.
     console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
 
-    // --- NUEVO: Iniciar la verificación periódica de errores en la hoja ---
+    // --- Iniciar la verificación periódica de errores en la hoja ---
     if (spreadsheetIdCasos && sheetRangeCasosRead && targetChannelIdCasos) {
         console.log(`Iniciando verificación periódica de errores cada ${ERROR_CHECK_INTERVAL / 1000} segundos.`);
         // Llamar a la función de verificación inmediatamente y luego configurar el intervalo
@@ -226,10 +243,10 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
             return; // Salir del listener después de responder
         }
 
-        // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar"
-        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar')) {
-            // --- EXPLICACIÓN ACTUALIZADA PARA /agregar-caso ---
-            const helpMessage = `
+        // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar" o "buscar"
+        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar') || messageContentLower.includes('buscar')) {
+            // --- EXPLICACIÓN ACTUALIZADA PARA /agregar-caso Y /buscar-caso ---
+            let helpMessage = `
 Para usar el comando **/agregar-caso**:
 
 Este comando inicia el proceso para registrar un nuevo caso de cambio o devolución.
@@ -240,6 +257,22 @@ Este comando inicia el proceso para registrar un nuevo caso de cambio o devoluci
 4.  El bot te presentará un formulario (Modal) para completar los demás datos (Número de Pedido, Número de Caso, Dirección/Teléfono/Datos).
 5.  Completa el formulario y haz clic en "Enviar".
 `;
+            // Añadir explicación para /buscar-caso si el canal de ayuda es relevante o si no hay canal específico para buscar
+            if (targetChannelIdBuscarCaso && message.channelId === targetChannelIdBuscarCaso || !targetChannelIdBuscarCaso) {
+                 helpMessage += `\n\nPara usar el comando **/buscar-caso**:
+
+Este comando te permite buscar casos por Número de Pedido en las hojas de Google Sheets configuradas.
+
+1.  Escribe \`/buscar-caso pedido:\` seguido del número de pedido que quieres buscar.
+2.  Ejemplo: \`/buscar-caso pedido: 12345\`
+3.  El bot buscará en las pestañas configuradas y te mostrará las filas encontradas.
+`;
+            } else if (targetChannelIdBuscarCaso) {
+                 // Si hay un canal específico para buscar, mencionar ese canal
+                 helpMessage += `\n\nPara usar el comando **/buscar-caso**: Por favor, usa este comando en el canal <#${targetChannelIdBuscarCaso}>.`;
+            }
+
+
             await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
             return; // Salir del listener después de responder
         }
@@ -596,6 +629,157 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: 'Hubo un error al iniciar el formulario de registro de caso. Por favor, inténtalo de nuevo.', ephemeral: true });
                 userPendingData.delete(interaction.user.id); // Limpiar estado pendiente si falla
             }
+
+        } else if (interaction.commandName === 'buscar-caso') { // --- NUEVO MANEJADOR PARA /buscar-caso ---
+             console.log(`Comando /buscar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+
+             // --- Restricción de canal para /buscar-caso ---
+             if (targetChannelIdBuscarCaso && interaction.channelId !== targetChannelIdBuscarCaso) {
+                 await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${targetChannelIdBuscarCaso}>.`, ephemeral: true });
+                 return; // Salir del handler si no es el canal correcto
+             }
+
+             // Deferir la respuesta inmediatamente, ya que la búsqueda en múltiples sheets puede tardar.
+             await interaction.deferReply({ ephemeral: false }); // Puedes hacerlo efímero si prefieres que solo el usuario vea el resultado
+
+             // Obtener el número de pedido de la opción del comando
+             const numeroPedidoBuscar = interaction.options.getString('pedido');
+             console.log(`Número de pedido a buscar: ${numeroPedidoBuscar}`);
+
+             if (!numeroPedidoBuscar) {
+                 await interaction.editReply({ content: '❌ Debes proporcionar un número de pedido para buscar.', ephemeral: true });
+                 return;
+             }
+
+             // --- Lógica para buscar en Google Sheets ---
+             if (!spreadsheetIdBuscarCaso || sheetsToSearch.length === 0) {
+                 console.error("Error: Variables de entorno para la búsqueda de casos incompletas.");
+                 await interaction.editReply({ content: '❌ Error de configuración del bot: La búsqueda de casos no está configurada correctamente.', ephemeral: true });
+                 return;
+             }
+
+             let foundRows = []; // Array para almacenar las filas encontradas
+             let searchSummary = `Resultados de la búsqueda para el pedido **${numeroPedidoBuscar}**:\n\n`;
+             let totalFound = 0;
+
+             try {
+                 // Iterar sobre cada nombre de sheet especificado
+                 for (const sheetName of sheetsToSearch) {
+                     console.log(`Buscando en la pestaña: "${sheetName}"`);
+                     // Leer todos los datos de la pestaña actual
+                     // Usamos un rango abierto (ej: 'Pestaña1!A:Z') para leer todas las columnas posibles
+                     const range = `${sheetName}!A:Z`;
+                     let response;
+                     try {
+                         response = await sheets.spreadsheets.values.get({
+                             spreadsheetId: spreadsheetIdBuscarCaso,
+                             range: range,
+                         });
+                     } catch (sheetError) {
+                          console.warn(`Error al leer la pestaña "${sheetName}":`, sheetError.message);
+                          searchSummary += `⚠️ Error al leer la pestaña "${sheetName}". Podría no existir o no tener permisos.\n`;
+                          continue; // Saltar a la siguiente pestaña si hay un error al leer esta
+                     }
+
+
+                     const rows = response.data.values;
+
+                     if (!rows || rows.length <= 1) { // Asumimos que la primera fila son encabezados
+                         console.log(`Pestaña "${sheetName}" vacía o solo con encabezados.`);
+                         continue; // Saltar a la siguiente pestaña si no hay datos
+                     }
+
+                     const headerRow = rows[0]; // La primera fila son los encabezados
+                     // Buscar el índice de la columna "Número de pedido" (insensible a mayúsculas/minúsculas y espacios)
+                     const pedidoColumnIndex = headerRow.findIndex(header =>
+                          header && String(header).trim().toLowerCase() === 'n° de pedido'
+                     );
+
+                     if (pedidoColumnIndex === -1) {
+                         console.warn(`No se encontró la columna "N° de pedido" en la pestaña "${sheetName}".`);
+                         searchSummary += `⚠️ No se encontró la columna "N° de pedido" en la pestaña "${sheetName}".\n`;
+                         continue; // Saltar a la siguiente pestaña si no se encuentra la columna
+                     }
+
+                     // Iterar sobre las filas de datos (saltando el encabezado)
+                     let foundInSheet = 0;
+                     for (let i = 1; i < rows.length; i++) {
+                         const row = rows[i];
+                         const rowNumber = i + 1; // Número de fila en Google Sheets (basado en 1)
+
+                         // Obtener el valor en la columna "Número de pedido" para esta fila
+                         const rowPedidoValue = row[pedidoColumnIndex] ? String(row[pedidoColumnIndex]).trim() : '';
+
+                         // Comparar con el número de pedido buscado (insensible a mayúsculas/minúsculas y espacios)
+                         if (rowPedidoValue.toLowerCase() === numeroPedidoBuscar.toLowerCase()) {
+                             // ¡Coincidencia encontrada! Añadir la fila completa y la información de la pestaña/fila.
+                             foundRows.push({
+                                 sheet: sheetName,
+                                 rowNumber: rowNumber,
+                                 data: row // Guardar todos los datos de la fila
+                             });
+                             foundInSheet++;
+                             totalFound++;
+                         }
+                     }
+                     console.log(`Encontrados ${foundInSheet} resultados en la pestaña "${sheetName}".`);
+                 }
+
+                 // --- Formatear y enviar la respuesta ---
+                 if (foundRows.length > 0) {
+                     searchSummary += `✅ Se encontraron **${foundRows.length}** coincidencias:\n\n`;
+
+                     // Construir el mensaje detallado con cada fila encontrada
+                     let detailedResults = '';
+                     for (const found of foundRows) {
+                         detailedResults += `**Pestaña:** "${found.sheet}", **Fila:** ${found.rowNumber}\n`;
+                         // Mostrar los datos de la fila. Puedes ajustar qué columnas mostrar aquí.
+                         // Por ahora, mostramos las primeras 6 columnas (A-F) como ejemplo.
+                         const displayColumns = found.data.slice(0, 6).join(' | '); // Unir las primeras 6 columnas con '|'
+                         detailedResults += `\`${displayColumns}\`\n\n`; // Usar bloques de código para formato
+                     }
+
+                     // Combinar el resumen y los resultados detallados.
+                     // Discord tiene un límite de caracteres por mensaje (2000).
+                     // Si los resultados son muy largos, podríamos necesitar enviar varios mensajes.
+                     const fullMessage = searchSummary + detailedResults;
+
+                     if (fullMessage.length > 2000) {
+                          // Si el mensaje es demasiado largo, enviar un resumen y quizás instruir al usuario
+                          // a revisar la hoja directamente o implementar paginación si es necesario.
+                          await interaction.editReply({ content: searchSummary + "Los resultados completos son demasiado largos para mostrar aquí. Por favor, revisa la hoja de Google Sheets directamente.", ephemeral: false });
+                     } else {
+                          await interaction.editReply({ content: fullMessage, ephemeral: false });
+                     }
+
+
+                 } else {
+                     // Si no se encontraron coincidencias en ninguna pestaña
+                     searchSummary += '😕 No se encontraron coincidencias en las pestañas configuradas.';
+                     await interaction.editReply({ content: searchSummary, ephemeral: false });
+                 }
+
+
+             } catch (error) {
+                 console.error('Error general durante la búsqueda de casos en Google Sheets:', error);
+                 // Construir un mensaje de error detallado para el usuario
+                 let errorMessage = '❌ Hubo un error al realizar la búsqueda de casos.';
+                 if (error.response && error.response.data) {
+                      if (error.response.data.error && error.response.data.error.message) {
+                           errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                      } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
+                                errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                          } else {
+                               errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
+                          }
+                     } else {
+                          errorMessage += ` Detalles: ${error.message}`;
+                     }
+                 errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
+
+                 await interaction.editReply({ content: errorMessage, ephemeral: false }); // Mostrar error aunque sea efímero
+             }
+
 
         } else {
             // Manejar otros comandos de barra si los tienes
@@ -988,12 +1172,12 @@ client.on('interactionCreate', async interaction => {
     // Si agregas select menus adicionales, los manejarías aquí con interaction.isSelectMenu()
 });
 
-// --- NUEVA FUNCIÓN: Verificar la hoja de Google Sheets en busca de errores ---
+// --- FUNCIÓN PARA VERIFICAR ERRORES EN LA HOJA DE GOOGLE SHEETS ---
 async function checkSheetForErrors() {
     console.log('Iniciando verificación de errores en Google Sheets...');
 
     // Asegurarse de que las variables necesarias estén configuradas
-    // ¡Ahora también necesitamos sheetRangeCasosRead para incluir la columna K!
+    // Necesitamos spreadsheetIdCasos, sheetRangeCasosRead (que incluye K), targetChannelIdCasos, y guildId
     if (!spreadsheetIdCasos || !sheetRangeCasosRead || !targetChannelIdCasos || !guildId) {
         console.warn('Configuración incompleta para la verificación de errores. Saltando la verificación.');
         return;
@@ -1033,7 +1217,7 @@ async function checkSheetForErrors() {
          await guild.members.fetch();
          console.log(`Miembros del servidor ${guild.name} cargados para búsqueda.`);
 
-        // Extraer el nombre de la hoja del rango configurado (Ej: 'SOLICITUDES BGH 2025')
+        // Extraer el nombre de la hoja del rango configurado (Ej: 'SOLICITUDES BGH 2025!A:K')
         const sheetName = sheetRangeCasosRead.split('!')[0];
         if (!sheetName) {
             console.error(`Error: No se pudo obtener el nombre de la hoja del rango de lectura configurado: ${sheetRangeCasosRead}.`);

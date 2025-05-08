@@ -47,6 +47,18 @@ const commands = [
         description: 'Registra un nuevo caso de cambio o devolución en Google Sheets.', // Descripción
         // Este comando no necesita opciones directas, usará un modal específico.
     },
+    {
+        name: 'buscar-caso',
+        description: 'Busca un caso por número de pedido en Google Sheets.',
+        options: [
+            {
+                name: 'pedido',
+                description: 'El número de pedido a buscar.',
+                type: ApplicationCommandOptionType.String, // Importa ApplicationCommandOptionType
+                required: true,
+            },
+        ],
+    }
 	// Si tuvieras más comandos, los añadirías aquí en este array.
 ];
 
