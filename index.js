@@ -1,4 +1,3 @@
-// Cargar variables de entorno del archivo .env (forma para Módulos ES)
 import 'dotenv/config';
 
 // --- Importaciones ---
@@ -20,10 +19,6 @@ import {
 import { google } from 'googleapis'; // Librería oficial de Google
 import path from 'path';              // Módulo nativo para manejo de rutas
 import fetch from 'node-fetch';       // Para descargar archivos adjuntos desde URL (Importación estándar ESM)
-
-// No necesitamos cheerio para el tracking de Andreani ya que la API devuelve JSON
-// import *as cheerio from 'cheerio';
-
 
 // --- Configuración del Cliente de Discord ---
 // Aquí se crea la instancia principal del bot
@@ -147,16 +142,8 @@ if (!parentDriveFolderId) {
 }
 
 
-// --- Manejo de Estado para Flujos Multi-paso y Notificaciones ---
-// Usaremos un Map para rastrear a los usuarios que han iniciado un flujo multi-paso.
-// Clave: ID del usuario de Discord (string)
-// Valor: Un objeto con información pendiente.
-// Para Factura A: { type: 'facturaA', pedido: '...', timestamp: Date } -> Esperando adjuntos
-// Para Casos: { type: 'caso', paso: 1 (esperando select), paso: 2 (esperando modal), tipoSolicitud: '...' }
-const userPendingData = new Map();
 
-// REMOVIDO: Set para rastrear las filas de error ya notificadas (ahora se guarda en la hoja)
-// const notifiedErrorRows = new Set();
+const userPendingData = new Map();
 
 // Intervalo de tiempo entre verificaciones de errores en la hoja (en milisegundos)
 let ERROR_CHECK_INTERVAL = process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000; // Default: 5 minutos (300000 ms)
@@ -211,8 +198,8 @@ client.on('messageCreate', async message => {
 
     // --- Lógica para responder a preguntas sobre comandos en el canal de ayuda ---
     if (helpChannelId && message.channelId === helpChannelId) {
-        // Si el mensaje contiene las palabras clave para Factura A
-        if (messageContentLower.includes('factura-a') || messageContentLower.includes('factura a') || messageContentLower.includes('facturaa') || messageContentLower.includes('solicitud')) { // <-- Palabras clave actualizadas
+        // Si el mensaje contiene la palabra "factura-a" o "solicitud" (por si preguntan por el nombre viejo)
+        if (messageContentLower.includes('factura a') || messageContentLower.includes('solicitud')) {
             const helpMessage = `
 Para usar el comando **/factura-a**:
 
@@ -227,8 +214,8 @@ Este comando abre un formulario (Modal) para registrar una nueva solicitud de Fa
             return; // Salir del listener después de responder
         }
 
-        // Si el mensaje contiene la palabra "tracking" Y NO contuvo palabras clave de Factura A
-        if (messageContentLower.includes('tracking') && !messageContentLower.includes('factura')) { // <-- Ajuste en la condición para evitar doble respuesta
+        // Si el mensaje contiene la palabra "tracking" Y NO contuvo "factura-a" o "solicitud" (para evitar doble respuesta)
+        if (messageContentLower.includes('tracking') && !messageContentLower.includes('factura-a') && !messageContentLower.includes('solicitud')) {
              const helpMessage = `
 Para usar el comando **/tracking**:
 
@@ -242,25 +229,8 @@ Este comando te permite consultar el estado actual de un envío de Andreani.
             return; // Salir del listener después de responder
         }
 
-        // Si el mensaje contiene las palabras clave para Buscar Caso
-        if (messageContentLower.includes('buscar caso')) { // <-- NUEVA PALABRA CLAVE
-             const helpMessage = `
-Para usar el comando **/buscar-caso**:
-
-Este comando te permite buscar casos por Número de Pedido en las hojas de Google Sheets configuradas.
-
-1.  Escribe \`/buscar-caso pedido:\` seguido del número de pedido que quieres buscar.
-2.  Ejemplo: \`/buscar-caso pedido: 12345\`
-3.  El bot buscará en las pestañas configuradas y te mostrará las filas encontradas.
-`;
-            await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
-            return; // Salir del listener después de responder
-        }
-
-
-        // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar" (y no fue manejado por "buscar caso")
-        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar')) { // <-- Ajuste en la condición
-            // --- EXPLICACIÓN ACTUALIZADA PARA /agregar-caso ---
+        // Si el mensaje contiene la palabra "caso" o "devolucion" o "cambio" o "agregar" o "buscar"
+        if (messageContentLower.includes('caso') || messageContentLower.includes('devolucion') || messageContentLower.includes('cambio') || messageContentLower.includes('agregar') & !messageContentLower.includes('buscar') ) {
             let helpMessage = `
 Para usar el comando **/agregar-caso**:
 
@@ -272,12 +242,27 @@ Este comando inicia el proceso para registrar un nuevo caso de cambio o devoluci
 4.  El bot te presentará un formulario (Modal) para completar los demás datos (Número de Pedido, Número de Caso, Dirección/Teléfono/Datos).
 5.  Completa el formulario y haz clic en "Enviar".
 `;
-            // Ya no añadimos la explicación de /buscar-caso aquí, ya que tiene su propia palabra clave.
-
             await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
             return; // Salir del listener después de responder
         }
     }
+
+    if (messageContentLower.includes('buscar') || messageContentLower.includes('buscar caso')) {
+        let helpMessage = `
+Para usar el comando **/buscar-caso**:
+
+Este comando se utilizar para buscar casos por número de pedido en la planilla de Sheets.
+
+1.  Escribe \`/agregar-caso\` **únicamente** en el canal <#${targetChannelIdBuscarCaso || 'ID_CANAL_CASOS'}>.
+2.  Seguido al comando ingresa el número de pedido y envia el mensaje.
+3.  El BOT te devolverá todos los casos cargados con ese número de pedido.
+ 
+`;
+        await message.reply({ content: helpMessage, ephemeral: false }); // ephemeral: false para que todos en el canal de ayuda lo vean
+        return; // Salir del listener después de responder
+    }
+
+
 
 
     // --- Lógica existente para recibir archivos adjuntos (solo para Factura A) ---
@@ -1186,385 +1171,6 @@ async function checkSheetForErrors() {
         // Extraer el nombre de la hoja del rango configurado (Ej: 'SOLICITUDES BGH 2025!A:K')
         const sheetName = sheetRangeCasosRead.split('!')[0];
         if (!sheetName) {
-            console.error(`Error: No se pudo obtener el nombre de la hoja del rango de lectura configurado: ${sheetRangeCasasRead}.`);
-            return;
-        }
-
-
-        // Iterar sobre las filas (empezando desde la segunda fila para omitir encabezados)
-        for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            const rowNumber = i + 1; // Número de fila en Google Sheets (basado en 1)
-
-            // Índices de las columnas: J es 9, K es 10
-            const errorColumnIndex = 9; // Columna J
-            const notifiedColumnIndex = 10; // Columna K
-
-            // Asegurarse de que la fila tiene suficientes columnas para acceder a la columna J y K
-            const errorValue = row.length > errorColumnIndex ? (String(row[errorColumnIndex] || '')).trim() : ''; // Valor en columna J
-            const notifiedValue = row.length > notifiedColumnIndex ? (String(row[notifiedColumnIndex] || '')).trim() : ''; // Valor en columna K
-
-            // Si hay contenido en la columna J (ERROR) Y la columna K está vacía (NO Notificado)
-            if (errorValue && !notifiedValue) {
-                console.log(`Error sin notificar encontrado en la fila ${rowNumber}: "${errorValue}"`);
-
-                // Extraer datos relevantes de la fila (ajusta los índices según tus columnas A-F)
-                const pedido = row[0] || 'N/A'; // Col A: N° de pedido (índice 0)
-                const fecha = row[1] || 'N/A'; // Col B: Fecha (índice 1)
-                const agenteName = row[2] || 'N/A'; // Col C: Agente que cargo la solicitud (índice 2)
-                const numeroCaso = row[3] || 'N/A'; // Col D: Numero de caso (índice 3)
-                const tipoSolicitud = row[4] || 'N/A'; // Col E: Solicitud (índice 4)
-                const datosContacto = row[5] || 'N/A'; // Col F: Dirección/Telefono/Datos (índice 5)
-                // Col J: ERROR (índice 9) - ya lo tenemos en errorValue
-                // Col K: NOTIFICADO (índice 10) - ya lo tenemos en notifiedValue (sabemos que está vacío)
-
-                // --- Intentar encontrar el usuario de Discord por nombre ---
-                let mention = agenteName; // Por defecto, usar el nombre de la hoja si no encontramos al usuario
-                try {
-                    // Buscar en los miembros del servidor por displayName o username
-                    const foundMember = guild.members.cache.find(member =>
-                        member.displayName === agenteName || member.user.username === agenteName
-                    );
-
-                    if (foundMember) {
-                        mention = `<@${foundMember.user.id}>`; // Usar la mención si se encuentra el miembro
-                        console.log(`Usuario de Discord encontrado para "${agenteName}": ${foundMember.user.tag}`);
-                    } else {
-                        console.warn(`No se encontró un usuario de Discord con displayName o username "${agenteName}" en el servidor.`);
-                         mention = `**${agenteName}** (Usuario no encontrado)`; // Indicar que no se encontró
-                    }
-                } catch (findError) {
-                    console.error(`Error al buscar usuario de Discord por nombre "${agenteName}":`, findError);
-                    mention = `**${agenteName}** (Error al buscar usuario)`; // Indicar error en la búsqueda
-                }
-
-
-                // --- Construir el mensaje de notificación ---
-                const notificationMessage = `
-🚨 **Error detectado en la hoja de Casos** 🚨
-
-${mention}, hay un error marcado en un caso que cargaste:
-
-**Fila en Sheet:** ${rowNumber}
-**N° de Pedido:** ${pedido}
-**N° de Caso:** ${numeroCaso}
-**Tipo de Solicitud:** ${tipoSolicitud}
-**Datos de Contacto:** ${datosContacto}
-**Error:** ${errorValue}
-
-Por favor, revisa la hoja para más detalles.
-`;
-
-                // --- Enviar el mensaje al canal de casos ---
-                try {
-                    await casesChannel.send(notificationMessage);
-                    console.log(`Notificación de error enviada para la fila ${rowNumber}.`);
-
-                    // --- Marcar la fila como notificada en Google Sheets (Columna K) ---
-                    // Obtener la fecha y hora actual para la marca
-                     const now = new Date();
-                     const notificationTimestamp = now.toLocaleString('es-AR', {
-                        year: 'numeric', month: '2-digit', day: '2-digit',
-                        hour: '2-digit', minute: '2-digit', second: '2-digit',
-                        hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
-                     }).replace(/\//g, '-');
-
-                    const updateRange = `${sheetName}!K${rowNumber}`; // Rango específico para la celda K de la fila actual
-                    const updateValue = [[`Notificado ${notificationTimestamp}`]]; // Valor a escribir (en un array de arrays)
-
-                    console.log(`Marcando fila ${rowNumber} como notificada en rango ${updateRange} con valor: ${updateValue}`);
-
-                    await sheets.spreadsheets.values.update({
-                        spreadsheetId: spreadsheetIdCasos,
-                        range: updateRange,
-                        valueInputOption: 'RAW', // Escribir el valor tal cual
-                        resource: { values: updateValue },
-                    });
-                    console.log(`Fila ${rowNumber} marcada como notificada en Google Sheets.`);
-
-
-                } catch (sendOrUpdateError) {
-                    console.error(`Error al enviar el mensaje de notificación o marcar la fila ${rowNumber}:`, sendOrUpdateError);
-                    // Si falla el envío o la actualización, no hacemos nada para que se intente de nuevo en la próxima verificación
-                }
-            }
-        }
-
-        console.log('Verificación de errores en Google Sheets completada.');
-
-    } catch (error) {
-        console.error('Error al leer la hoja de Google Sheets para verificar errores:', error);
-        // Opcional: Notificar a un canal de administración o loggear el error de forma más persistente
-    }
-}
-
-
-/**
- * Función para construir el objeto Modal de Factura A
- * @returns {ModalBuilder} - El objeto Modal listo para ser mostrado.
- */
-function buildFacturaAModal() {
-    const modal = new ModalBuilder()
-        .setCustomId('facturaAModal') // CUSTOM ID RENOMBRADO
-        .setTitle('Registrar Solicitud Factura A'); // Título que ve el usuario
-
-    // Campo para N° de Pedido
-    const pedidoInput = new TextInputBuilder()
-        .setCustomId('pedidoInput') // ID único para este campo dentro del modal
-        .setLabel("Número de Pedido")
-        .setStyle('Short') // Estilo de campo: una línea
-        .setRequired(true); // Hacer que este campo sea obligatorio
-
-    // Campo para Caso
-    const casoInput = new TextInputBuilder()
-        .setCustomId('casoInput') // ID único para este campo
-        .setLabel("Número de Caso")
-        .setStyle('Short')
-        .setRequired(true);
-
-    // Campo para Email
-    const emailInput = new TextInputBuilder()
-        .setCustomId('emailInput') // ID único para este campo
-        .setLabel("Email del Cliente")
-        .setStyle('Short')
-        .setRequired(true);
-
-    // Campo para Descripción (Mantenemos en el modal, pero no se guarda en Sheet)
-    const descripcionInput = new TextInputBuilder()
-        .setCustomId('descripcionInput') // ID único para este campo
-        .setLabel("Detalle de la Solicitud")
-        .setStyle('Paragraph') // Estilo de campo: multi-línea
-        .setRequired(false); // Puede que no siempre sea necesaria
-
-    // Un Modal puede tener hasta 5 ActionRowBuilder. Cada ActionRowBuilder puede contener 1 TextInputBuilder.
-    // Creamos una fila por cada campo de texto.
-    const firstRow = new ActionRowBuilder().addComponents(pedidoInput);
-    const secondRow = new ActionRowBuilder().addComponents(casoInput);
-    const thirdRow = new ActionRowBuilder().addComponents(emailInput);
-    const fourthRow = new ActionRowBuilder().addComponents(descripcionInput); // Fila para la descripción
-
-    // Añadir las filas de componentes al modal
-    // Asegúrate que el número de addComponents coincide con las filas que has definido.
-    modal.addComponents(firstRow, secondRow, thirdRow, fourthRow); // Añadir todas las filas
-
-
-    return modal;
-}
-
-/**
- * Función para construir el Select Menu del Tipo de Solicitud de Caso.
- * @returns {StringSelectMenuBuilder} - El objeto Select Menu listo para ser usado en un mensaje.
- */
-function buildTipoSolicitudSelectMenu() { // Función para el Select Menu
-    const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('casoTipoSolicitudSelect') // ID único para identificar este Select Menu
-        .setPlaceholder('Selecciona el tipo de solicitud...'); // Texto que se muestra antes de seleccionar
-
-    // Añadir las opciones al Select Menu
-    tipoSolicitudOptions.forEach(option => {
-        selectMenu.addOptions(
-            new StringSelectMenuOptionBuilder()
-                .setLabel(option.label) // Texto que ve el usuario
-                .setValue(option.value) // Valor que se envía al bot
-        );
-    });
-
-    return selectMenu;
-}
-
-/**
- * Función para construir el objeto Modal de Registro de Caso (Cambios/Devoluciones)
- * Este modal ahora NO incluye el campo de Tipo de Solicitud.
- * @returns {ModalBuilder} - El objeto Modal listo para ser mostrado.
- */
-function buildCasoModal() { // Función para el modal de casos (MODIFICADA)
-    const modal = new ModalBuilder()
-        .setCustomId('casoModal') // ID único para identificar este modal al ser enviado
-        .setTitle('Detalles del Caso'); // Título que ve el usuario (cambiado para reflejar que es el paso 2)
-
-    // Campo para N° de Pedido (para el caso)
-    const casoPedidoInput = new TextInputBuilder()
-        .setCustomId('casoPedidoInput') // ID único para este campo
-        .setLabel("Número de Pedido")
-        .setStyle('Short')
-        .setRequired(true);
-
-    // Campo para Número de Caso (para el caso)
-    const casoNumeroCasoInput = new TextInputBuilder()
-        .setCustomId('casoNumeroCasoInput') // ID único para este campo
-        .setLabel("Número de Caso")
-        .setStyle('Short')
-        .setRequired(true);
-
-    // Campo para Dirección/Telefono/Datos
-    const casoDatosContactoInput = new TextInputBuilder()
-        .setCustomId('casoDatosContactoInput') // ID único para este campo
-        .setLabel("Dirección / Teléfono / Otros Datos")
-        .setStyle('Paragraph') // Usar estilo párrafo para más espacio
-        .setRequired(true); // Hacer que este campo sea obligatorio
-
-    // Creamos una fila por cada campo de texto.
-    const row1 = new ActionRowBuilder().addComponents(casoPedidoInput);
-    const row2 = new ActionRowBuilder().addComponents(casoNumeroCasoInput);
-    // La fila del Tipo de Solicitud se elimina de aquí
-    const row3 = new ActionRowBuilder().addComponents(casoDatosContactoInput);
-
-
-    // Añadir las filas de componentes al modal
-    modal.addComponents(row1, row2, row3);
-
-    return modal;
-}
-
-
-/**
- * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
- * Si no existe, la crea.
- * @param {object} drive - Instancia de la API de Google Drive (obtenida de google.drive()).
- * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
- * @param {string} folderName - Nombre de la carpeta a buscar/crear.
- * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
- * @throws {Error} - Lanza un error si falla la búsqueda o creación.
- */
-async function findOrCreateDriveFolder(drive, parentId, folderName) {
-    try {
-        // Construir la query de búsqueda en Drive API
-        // Escapar comillas simples en el nombre de la carpeta para evitar problemas en la query
-        let query = `name='${folderName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        if (parentId) {
-            // Si hay una carpeta padre, buscar solo dentro de ella
-            query += ` and '${parentId}' in parents`;
-        }
-
-        // Listar archivos (carpetas en este caso) que coincidan con la query
-        const response = await drive.files.list({
-            q: query,
-            fields: 'files(id, name)', // Solicitar solo el ID y nombre de los archivos encontrados
-            spaces: 'drive', // Buscar en Google Drive
-        });
-
-        if (response.data.files.length > 0) {
-            // Carpeta encontrada, retornar su ID
-            console.log(`Carpeta de Drive '${folderName}' encontrada.`);
-            return response.data.files[0].id;
-        } else {
-            // Carpeta no encontrada, crearla
-            console.log(`Carpeta de Drive '${folderName}' no encontrada. Creando...`);
-            const fileMetadata = {
-                'name': folderName,
-                'mimeType': 'application/vnd.google-apps.folder',
-                 // Si parentId existe, especificar que la nueva carpeta sea hija de parentId
-                 ...(parentId && { parents: [parentId] })
-            };
-            const file = await drive.files.create({
-                resource: fileMetadata,
-                fields: 'id' // Solicitar solo el ID de la carpeta recién creada
-            });
-            console.log(`Carpeta de Drive '${folderName}' creada con ID: ${file.data.id}`);
-            return file.data.id; // Retornar el ID de la carpeta creada
-        }
-    } catch (error) {
-         console.error(`Error al buscar o crear la carpeta '${folderName}' en Drive:`, error);
-         throw error; // Relanzar el error para que sea manejado por el try/catch principal
-     }
-}
-
-/**
- * Descarga un archivo desde una URL (adjunto de Discord) y lo sube a Google Drive.
- * @param {object} drive - Instancia de la API de Google Drive.
- * @param {string} folderId - ID de la carpeta donde subir el archivo.
- * @param {object} attachment - Objeto Attachment de discord.js.
- * @returns {Promise<object>} - Promesa que resuelve con los metadatos (ID y nombre) del archivo subido.
- * @throws {Error} - Lanza un error si falla la descarga o subida.
- */
-async function uploadFileToDrive(drive, folderId, attachment) {
-     try {
-         console.log(`Intentando descargar archivo: ${attachment.name} desde ${attachment.url}`);
-         // Usa la variable 'fetch' importada al inicio del archivo
-         const fileResponse = await fetch(attachment.url);
-
-         if (!fileResponse.ok) {
-             // Si la respuesta HTTP no es 2xx, lanzar un error
-             throw new Error(`Error al descargar el archivo ${attachment.name}: HTTP status ${fileResponse.status}, ${fileResponse.statusText}`);
-         }
-
-         // Metadatos para el archivo en Drive
-         const fileMetadata = {
-             name: attachment.name, // Usar el nombre original del archivo adjunto
-             parents: [folderId],   // Especificar la carpeta de destino usando su ID
-         };
-
-         // Objeto media para la subida del archivo
-         const media = {
-             mimeType: fileResponse.headers.get('content-type') || 'application/octet-stream', // Obtener MIME type del header HTTP o usar uno genérico
-             body: fileResponse.body, // Usar el cuerpo de la respuesta como un stream de datos
-         };
-
-         console.log(`Subiendo archivo ${attachment.name} a Drive en la carpeta ${folderId}...`);
-         const uploadedFile = await drive.files.create({
-             resource: fileMetadata, // Metadatos del archivo
-             media: media,           // Datos del archivo (contenido)
-             fields: 'id, name',     // Campos a retornar del archivo subido
-             // ensureRevisionUpload: true // Opcional: Forzar nueva versión si un archivo con el mismo nombre ya existe
-         });
-
-         console.log(`Archivo "${uploadedFile.data.name}" subido con éxito. ID de Drive: ${uploadedFile.data.id}`);
-         return uploadedFile.data;
-     } catch (error) {
-         console.error(`Error al descargar o subir el archivo ${attachment.name}:`, error);
-         throw error;
-     }
-}
-
-
-// --- FUNCIÓN PARA VERIFICAR ERRORES EN LA HOJA DE GOOGLE SHEETS ---
-async function checkSheetForErrors() {
-    console.log('Iniciando verificación de errores en Google Sheets...');
-
-    // Asegurarse de que las variables necesarias estén configuradas
-    // Necesitamos spreadsheetIdCasos, sheetRangeCasosRead (que incluye K), targetChannelIdCasos, y guildId
-    if (!spreadsheetIdCasos || !sheetRangeCasosRead || !targetChannelIdCasos || !guildId) {
-        console.warn('Configuración incompleta para la verificación de errores. Saltando la verificación.');
-        return;
-    }
-
-    try {
-        // Leer los datos de la hoja de Google Sheets, incluyendo la columna J (ERROR) y K (NOTIFICADO)
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: spreadsheetIdCasos,
-            // ¡Usar el rango que incluye la columna de error (J) Y la de notificación (K)!
-            range: sheetRangeCasosRead,
-        });
-
-        const rows = response.data.values;
-
-        // Si no hay datos en la hoja (aparte de los encabezados), no hay nada que verificar
-        if (!rows || rows.length <= 1) { // Asumimos que la primera fila son encabezados
-            console.log('No hay datos de casos en la hoja para verificar.');
-            return;
-        }
-
-        // Obtener el canal de Discord donde se enviarán las notificaciones
-        const casesChannel = await client.channels.fetch(targetChannelIdCasos);
-        if (!casesChannel) {
-            console.error(`Error: No se pudo encontrar el canal de Discord con ID ${targetChannelIdCasos}.`);
-            return;
-        }
-
-        // Obtener el servidor (Guild) para buscar miembros por nombre
-        const guild = await client.guilds.fetch(guildId);
-         if (!guild) {
-             console.error(`Error: No se pudo encontrar el servidor de Discord con ID ${guildId}.`);
-             return;
-         }
-         // Cargar todos los miembros del servidor para poder buscarlos por nombre
-         // Asegurarse de tener el intent GuildMembers activado
-         await guild.members.fetch();
-         console.log(`Miembros del servidor ${guild.name} cargados para búsqueda.`);
-
-        // Extraer el nombre de la hoja del rango configurado (Ej: 'SOLICITUDES BGH 2025!A:K')
-        const sheetName = sheetRangeCasosRead.split('!')[0];
-        if (!sheetName) {
             console.error(`Error: No se pudo obtener el nombre de la hoja del rango de lectura configurado: ${sheetRangeCasosRead}.`);
             return;
         }
@@ -1888,87 +1494,14 @@ async function uploadFileToDrive(drive, folderId, attachment) {
          });
 
          console.log(`Archivo "${uploadedFile.data.name}" subido con éxito. ID de Drive: ${uploadedFile.data.id}`);
-         return uploadedFile.data;
+         return uploadedFile.data; 
+
      } catch (error) {
          console.error(`Error al descargar o subir el archivo ${attachment.name}:`, error);
-         throw error;
+         throw error; 
      }
 }
 
-
-// --- FUNCIÓN PARA VERIFICAR SI UN NÚMERO DE PEDIDO YA EXISTE EN UNA HOJA ---
-/**
- * Verifica si un número de pedido ya existe en la columna "Número de pedido" de una hoja específica.
- * @param {string} spreadsheetId - ID del Google Sheet.
- * @param {string} sheetRange - Rango de la hoja a leer (ej: 'NombrePestaña!A:Z').
- * @param {string} pedidoNumber - El número de pedido a buscar.
- * @returns {Promise<boolean>} - Promesa que resuelve a true si el pedido existe, false si no.
- * @throws {Error} - Lanza un error si falla la lectura de la hoja.
- */
-async function checkIfPedidoExists(spreadsheetId, sheetRange, pedidoNumber) {
-    if (!spreadsheetId || !sheetRange || !pedidoNumber) {
-        console.warn('checkIfPedidoExists: Parámetros incompletos.');
-        return false; // Consideramos que no existe si los parámetros son incompletos
-    }
-
-    try {
-        // Leer todos los datos del rango especificado
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: spreadsheetId,
-            range: sheetRange,
-        });
-
-        const rows = response.data.values;
-
-        // Si no hay datos o solo encabezados, el pedido no existe
-        if (!rows || rows.length <= 1) {
-            console.log(`checkIfPedidoExists: No hay datos en ${sheetRange}. Pedido ${pedidoNumber} no encontrado.`);
-            return false;
-        }
-
-        const headerRow = rows[0]; // La primera fila son los encabezados
-        // Buscar el índice de la columna "Número de pedido" (insensible a mayúsculas/minúsculas y espacios)
-        const pedidoColumnIndex = headerRow.findIndex(header =>
-             header && String(header).trim().toLowerCase() === 'número de pedido'
-        );
-
-        if (pedidoColumnIndex === -1) {
-            console.warn(`checkIfPedidoExists: No se encontró la columna "Número de pedido" en el rango ${sheetRange}.`);
-            // Si no se encuentra la columna, no podemos verificar. Podríamos lanzar un error o asumir que no existe.
-            // Para evitar bloquear el registro por un error en la estructura de la hoja, vamos a asumir que no existe.
-            return false;
-        }
-
-        // Iterar sobre las filas de datos (saltando el encabezado)
-        for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-
-            // Asegurarse de que la fila tiene la columna del número de pedido antes de acceder a ella
-            if (row.length <= pedidoColumnIndex) {
-                 continue; // Saltar esta fila si no tiene suficientes columnas
-            }
-
-            const rowPedidoValue = row[pedidoColumnIndex] ? String(row[pedidoColumnIndex]).trim() : '';
-
-            // Comparar el valor de la fila con el número de pedido buscado (insensible a mayúsculas/minúsculas y espacios)
-            if (rowPedidoValue.toLowerCase() === pedidoNumber.trim().toLowerCase()) {
-                console.log(`checkIfPedidoExists: Pedido ${pedidoNumber} encontrado como duplicado en la fila ${i + 1} de ${sheetRange}.`);
-                return true; // Se encontró un duplicado
-            }
-        }
-
-        console.log(`checkIfPedidoExists: Pedido ${pedidoNumber} no encontrado en ${sheetRange}.`);
-        return false; // No se encontró el pedido en ninguna fila
-
-    } catch (error) {
-        console.error(`checkIfPedidoExists: Error al leer Google Sheet ${spreadsheetId}, rango ${sheetRange}:`, error);
-        throw error; // Relanzar el error para que sea manejado por el llamador
-    }
-}
-
-
-// --- Conectar el Bot a Discord usando el Token ---
-// Inicia sesión con el token del bot. Añadimos mensajes de log y manejador de errores.
 
 console.log("Paso 1: Llegamos a la sección de conexión."); // <-- Log de inicio
 console.log(`Paso 2: Token de Discord cargado (primeros 5 chars): ${discordToken ? discordToken.substring(0, 5) + '...' : 'TOKEN NO CARGADO'}`); // <-- Log para verificar que el token se cargó
@@ -1979,5 +1512,5 @@ client.login(discordToken).catch(err => {
     process.exit(1); // Salir del proceso si la conexión falla
 });
 
-// Este log quizás no aparezca si la conexión falla inmediatamente o si process.exit(1) se ejecuta rápido
 console.log("Paso 4: client.login() llamado. Esperando evento 'ready' o error."); // <-- Log después de llamar a login
+
