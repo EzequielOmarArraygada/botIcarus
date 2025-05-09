@@ -193,4 +193,3 @@ if (isNaN(config.errorCheckIntervalMs) || config.errorCheckIntervalMs < 10000) {
 
 // Exportar el objeto de configuración y los tipos de caso
 export default config;
-export { caseTypes };
