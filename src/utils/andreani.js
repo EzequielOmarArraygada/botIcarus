@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 
 /**
  * Consulta la API de Andreani para obtener información de tracking.
- * NOTA: Esta función utiliza una API no oficial identificada en el sitio web de Andreani.
+ * NOTA: Esta función utiliza una API no oficial pública identificada en el sitio web de Andreani.
  * Para un uso en producción, se recomienda encarecidamente obtener acceso a la API oficial
  * de Andreani para desarrolladores y adaptar esta función según su documentación.
  * @param {string} trackingNumber - Número de seguimiento de Andreani.

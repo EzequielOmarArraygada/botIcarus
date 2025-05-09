@@ -1,4 +1,3 @@
-// src/events/interactionCreate.js
 // Importa las funciones de interacciones y utilidades necesarias
 import { ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js'; // Necesario para el botón en el select menu handler
 import { buildFacturaAModal, buildCasoModal } from '../interactions/modals.js';

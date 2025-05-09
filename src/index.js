@@ -42,10 +42,6 @@ try {
     // Pasamos las credenciales desde el objeto config
     sheetsInstance = initializeGoogleSheets(config.googleCredentialsJson);
     driveInstance = initializeGoogleDrive(config.googleCredentialsJson);
-    // Opcional: hacer las instancias globales si te resulta más fácil pasarlas así,
-    // pero pasarlas como parámetros a los handlers es una práctica más limpia.
-    // global.sheets = sheetsInstance;
-    // global.drive = driveInstance;
 
 } catch (error) {
     console.error("Error al inicializar APIs de Google:", error);

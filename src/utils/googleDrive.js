@@ -1,9 +1,8 @@
 import { google } from 'googleapis';
 import fetch from 'node-fetch';
 
-// Declaramos la instancia aquí, se inicializará desde index.js
 let drive;
-let auth; // Necesitamos auth para inicializar drive
+let auth; 
 
 /**
  * Inicializa la instancia de Google Drive API.

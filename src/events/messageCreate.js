@@ -1,5 +1,3 @@
-// Importa las funciones de utilidad y otras variables necesarias
-// import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js';
 
 /**
  * Configura el listener para el evento messageCreate.
