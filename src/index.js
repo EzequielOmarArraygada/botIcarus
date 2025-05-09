@@ -1,26 +1,27 @@
-
 // --- Importaciones de discord.js ---
 import { Client, GatewayIntentBits } from 'discord.js';
 
 // --- Importación del archivo de configuración ---
-import config from './config.js';
+import config from './config.js'; // Importamos el objeto config
 
 // --- Importaciones de utilidades ---
 import { initializeGoogleSheets, checkSheetForErrors, checkIfPedidoExists } from './utils/googleSheets.js';
 import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive } from './utils/googleDrive.js';
 import { getAndreaniTracking } from './utils/andreani.js';
 
-// --- Importaciones de interacciones (solo las funciones de construcción) ---
-import { buildFacturaAModal, buildCasoModal } from './interactions/modals.js';
+// --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
+// Asegúrate de importar TODAS las funciones de modales que uses
+import { buildFacturaAModal, buildCasoModal, buildCancelacionModal, buildReembolsoModal } from './interactions/modals.js'; // <-- Importamos los nuevos modales
 import { buildTipoSolicitudSelectMenu } from './interactions/selectMenus.js';
 // import { buildMyButton } from './interactions/buttons.js'; // Si tienes botones personalizados
+
 
 // --- Importaciones de manejadores de eventos ---
 import setupMessageCreate from './events/messageCreate.js';
 import setupInteractionCreate from './events/interactionCreate.js';
 
 
-// --- Configuración del Cliente de Discord ---
+// --- Configuración del Cliente de Discord ---\
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -38,14 +39,16 @@ const userPendingData = new Map();
 let sheetsInstance;
 let driveInstance;
 try {
-    // Inicializar Sheets y Drive usando las funciones de utilidad importadas
-    // Pasamos las credenciales desde el objeto config
+    if (!config.googleCredentialsJson) {
+        console.error("Error CRÍTICO: La variable de entorno GOOGLE_CREDENTIALS_JSON no está configurada.");
+        process.exit(1);
+    }
     sheetsInstance = initializeGoogleSheets(config.googleCredentialsJson);
     driveInstance = initializeGoogleDrive(config.googleCredentialsJson);
 
 } catch (error) {
     console.error("Error al inicializar APIs de Google:", error);
-    process.exit(1); // Salir si las APIs de Google no se inicializan
+    process.exit(1);
 }
 
 
@@ -56,40 +59,56 @@ client.once('ready', async () => {
     console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
 
     // --- Iniciar la verificación periódica de errores en la hoja ---
-    if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos && config.guildId) {
-        console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos.`);
+    // NOTA: Actualmente, la verificación de errores solo está implementada para la hoja principal de Casos (Solicitud BGH).
+    // Si necesitas verificar errores en otras hojas (Cancelaciones, Reembolsos, etc.),
+    // deberás extender la función checkSheetForErrors en googleSheets.js
+    // o crear funciones de verificación separadas para cada hoja y llamarlas aquí.
+    if (config.spreadsheetIdCasosBgh && config.sheetRangeCasosBghRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
+        console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos BGH.`);
         // Llamar a la función importada y pasarle las dependencias necesarias
-        checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId);
-        setInterval(() => checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
+        checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasosBgh, config.sheetRangeCasosBghRead, config.targetChannelIdCasos, config.guildId);
+        setInterval(() => checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasosBgh, config.sheetRangeCasosBghRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
     } else {
-        console.warn("La verificación periódica de errores no se iniciará debido a la falta de configuración de Google Sheets (ID, rango de lectura) o canal de casos.");
+        console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
     }
+
+    // Si necesitas verificar errores en Cancelaciones, podrías añadir algo como:
+    // if (config.spreadsheetIdCancelaciones && config.sheetRangeCancelacionesRead && config.targetChannelIdCasos && config.guildId) {
+    //     console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Cancelaciones.`);
+    //     // Deberías tener una función checkSheetForErrorsCancelaciones o modificar la existente
+    //     // checkSheetForErrorsCancelaciones(client, sheetsInstance, config.spreadsheetIdCancelaciones, config.sheetRangeCancelacionesRead, config.targetChannelIdCasos, config.guildId);
+    //     // setInterval(() => checkSheetForErrorsCancelaciones(client, sheetsInstance, config.spreadsheetIdCancelaciones, config.sheetRangeCancelacionesRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
+    // }
+
+
 });
 
 // --- Configurar Listeners de Eventos ---
 // Llama a las funciones de setup importadas y pásales las variables y funciones necesarias
-// Pasamos el objeto config completo y las instancias de las APIs
 setupMessageCreate(
     client,
     userPendingData,
-    config, // Pasar el objeto de configuración
-    driveInstance, // Pasar la instancia de drive
-    findOrCreateDriveFolder, // Pasar la función de utilidad
-    uploadFileToDrive // Pasar la función de utilidad
+    config,
+    driveInstance,
+    findOrCreateDriveFolder,
+    uploadFileToDrive
 );
 
 setupInteractionCreate(
     client,
     userPendingData,
-    config, // Pasar el objeto de configuración
-    sheetsInstance, // Pasar la instancia de sheets
-    driveInstance, // Pasar la instancia de drive
-    buildFacturaAModal, // Pasar la función de interacción
-    buildTipoSolicitudSelectMenu, // Pasar la función de interacción
-    buildCasoModal, // Pasar la función de interacción
-    checkIfPedidoExists, // Pasar la función de utilidad
-    getAndreaniTracking // Pasar la función de utilidad
-    // Pasa otras funciones o variables que necesiten los handlers
+    config,
+    sheetsInstance,
+    driveInstance,
+    buildFacturaAModal,
+    buildTipoSolicitudSelectMenu,
+    buildCasoModal,
+    buildCancelacionModal, // <-- Pasar la nueva función
+    buildReembolsoModal, // <-- Pasar la nueva función
+    checkIfPedidoExists,
+    getAndreaniTracking,
+    findOrCreateDriveFolder,
+    uploadFileToDrive
 );
 
 
@@ -97,7 +116,7 @@ setupInteractionCreate(
 console.log("Paso 1: Llegamos a la sección de conexión.");
 console.log(`Paso 2: Token de Discord cargado (primeros 5 chars): ${config.discordToken ? config.discordToken.substring(0, 5) + '...' : 'TOKEN NO CARGADO'}`);
 
-client.login(config.discordToken).catch(err => { // Usamos config.discordToken
+client.login(config.discordToken).catch(err => {
     console.error("Paso 3: Error al conectar con Discord.", err);
     console.error("Paso 3: Detalles completos del error de login:", err);
     process.exit(1);

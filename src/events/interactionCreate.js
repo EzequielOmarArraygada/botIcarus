@@ -1,10 +1,13 @@
 // Importa las funciones de interacciones y utilidades necesarias
-import { ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js'; // Necesario para el botón en el select menu handler
-import { buildFacturaAModal, buildCasoModal } from '../interactions/modals.js';
-import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js'; // Asegúrate de importar buildTipoSolicitudSelectMenu
+import { ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
+// Importa TODAS las funciones de construcción de modales que vayas a usar
+import { buildFacturaAModal, buildCasoModal, buildCancelacionModal, buildReembolsoModal } from '../interactions/modals.js'; // <-- Importamos los nuevos modales
+import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js';
 import { checkIfPedidoExists } from '../utils/googleSheets.js';
 import { getAndreaniTracking } from '../utils/andreani.js';
-import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
+import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js';
+// Importamos caseTypes desde el archivo de configuración
+import { caseTypes } from '../config.js';
 
 
 /**
@@ -17,11 +20,13 @@ import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {function} buildFacturaAModal - Función para construir el modal de Factura A.
  * @param {function} buildTipoSolicitudSelectMenu - Función para construir el select menu de tipo de solicitud.
- * @param {function} buildCasoModal - Función para construir el modal de casos.
+ * @param {function} buildCasoModal - Función para construir el modal de casos (Solicitud BGH / Cambio Dirección).
+ * @param {function} buildCancelacionModal - Función para construir el modal de Cancelación.
+ * @param {function} buildReembolsoModal - Función para construir el modal de Reembolso. // <-- Pasar la nueva función
  * @param {function} checkIfPedidoExists - Función para verificar duplicados.
  * @param {function} getAndreaniTracking - Función para obtener tracking de Andreani.
- * @param {function} findOrCreateDriveFolder - Función de utilidad de Drive. // Pasar la función
- * @param {function} uploadFileToDrive - Función de utilidad de Drive. // Pasar la función
+ * @param {function} findOrCreateDriveFolder - Función de utilidad de Drive.
+ * @param {function} uploadFileToDrive - Función de utilidad de Drive.
  */
 export default (
     client,
@@ -32,29 +37,28 @@ export default (
     buildFacturaAModal,
     buildTipoSolicitudSelectMenu,
     buildCasoModal,
+    buildCancelacionModal,
+    buildReembolsoModal, // <-- Recibir la nueva función
     checkIfPedidoExists,
     getAndreaniTracking,
     findOrCreateDriveFolder,
     uploadFileToDrive
 ) => {
     client.on('interactionCreate', async interaction => {
-        if (interaction.user.bot) return; // Ignorar interacciones de bots
+        if (interaction.user.bot) return;
 
         // --- Manejar Comandos de Barra (Slash Commands) ---
         if (interaction.isChatInputCommand()) {
-            // Verifica si es el comando "/factura-a"
             if (interaction.commandName === 'factura-a') {
                  console.log(`Comando /factura-a recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-                 // --- Restricción de canal para /factura-a ---
                  if (config.targetChannelIdFacA && interaction.channelId !== config.targetChannelIdFacA) {
                       await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${config.targetChannelIdFacA}>.`, ephemeral: true });
                       return;
                  }
 
-                // !!! MOSTRAR EL MODAL DE Factura A !!!
                 try {
-                    const modal = buildFacturaAModal(); // Usamos la función importada
+                    const modal = buildFacturaAModal();
                     await interaction.showModal(modal);
                     console.log('Modal de Factura A mostrado al usuario.');
 
@@ -67,10 +71,9 @@ export default (
                     }
                     userPendingData.delete(interaction.user.id);
                 }
-            } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
+            } else if (interaction.commandName === 'tracking') {
                  console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-                 // --- Restricción de canal para /tracking ---
                  if (config.targetChannelIdEnvios && interaction.channelId !== config.targetChannelIdEnvios) {
                      await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${config.targetChannelIdEnvios}>.`, ephemeral: true });
                      return;
@@ -86,17 +89,15 @@ export default (
                      return;
                  }
 
-                 // --- Lógica para consultar el tracking en Andreani usando la API JSON ---
                  let trackingInfo = null;
 
                  try {
                      const trackingData = await getAndreaniTracking(trackingNumber, config.andreaniAuthHeader);
 
-                     // --- Extraer la información del JSON y formatear ---
                      if (trackingData && trackingData.procesoActual && trackingData.timelines) {
                          const procesoActual = trackingData.procesoActual;
                          const fechaEstimadaDeEntrega = trackingData.fechaEstimadaDeEntrega;
-                         let timelines = trackingData.timelines; // Usamos let para poder reasignar después de ordenar
+                         let timelines = trackingData.timelines;
                          const numeroAndreani = trackingData.numeroAndreani;
 
                          trackingInfo = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n`;
@@ -108,28 +109,23 @@ export default (
                          }
 
                          if (timelines && timelines.length > 0) {
-                             // --- Ordenar las etapas principales por fecha del último evento (descendente) ---
-                             // Esto ayuda a que las etapas más recientes aparezcan primero
                              timelines.sort((a, b) => {
                                  const dateA = a.fechaUltimoEvento ? new Date(a.fechaUltimoEvento).getTime() : 0;
                                  const dateB = b.fechaUltimoEvento ? new Date(b.fechaUltimoEvento).getTime() : 0;
-                                 return dateB - dateA; // Orden descendente
+                                 return dateB - dateA;
                              });
 
 
                              trackingInfo += '\n\nHistorial:';
-                             // Iterar sobre cada timeline (cada etapa principal)
                              for (const timeline of timelines) {
                                  if (timeline.traducciones && timeline.traducciones.length > 0) {
-                                     // --- Ordenar los eventos detallados (traducciones) por fecha (descendente) ---
                                      const sortedTraducciones = timeline.traducciones.sort((a, b) => {
                                          const dateA = a.fechaEvento ? new Date(a.fechaEvento).getTime() : 0;
                                          const dateB = b.fechaEvento ? new Date(b.fechaEvento).getTime() : 0;
-                                         return dateB - dateA; // Orden descendente
+                                         return dateB - dateA;
                                      });
 
-                                     // Iterar sobre cada traducción/evento dentro de la etapa (ahora ordenados)
-                                     for (const evento of sortedTraducciones) { // Usamos el array ordenado
+                                     for (const evento of sortedTraducciones) {
                                          const fechaHora = evento.fechaEvento ? new Date(evento.fechaEvento).toLocaleString('es-AR', {
                                              year: 'numeric', month: '2-digit', day: '2-digit',
                                              hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
@@ -142,7 +138,6 @@ export default (
                                          }
                                      }
                                  } else if (timeline.titulo) {
-                                     // Si no hay traducciones detalladas, al menos mostrar el título de la etapa
                                      const fechaUltimoEvento = timeline.fechaUltimoEvento ? new Date(timeline.fechaUltimoEvento).toLocaleString('es-AR', {
                                          year: 'numeric', month: '2-digit', day: '2-digit',
                                          hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
@@ -151,7 +146,6 @@ export default (
                                  }
                              }
 
-                             // Verificar si se añadió algo al historial después de iterar
                              const initialHistoryString = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n${procesoActual.titulo}` + (fechaEstimadaDeEntrega ? ` - ${fechaEstimadaDeEntrega.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '')}` : '') + '\n\nHistorial:';
                              if (trackingInfo === initialHistoryString) {
                                   trackingInfo += '\nSin historial de eventos detallado disponible.';
@@ -178,20 +172,18 @@ export default (
                  await interaction.editReply({ content: trackingInfo, ephemeral: false });
                  console.log('Respuesta de tracking enviada.');
 
-            } else if (interaction.commandName === 'agregar-caso') { // MANEJADOR PARA /agregar-caso
+            } else if (interaction.commandName === 'agregar-caso') {
                 console.log(`Comando /agregar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-                // --- Restricción de canal para /agregar-caso ---
                 if (config.targetChannelIdCasos && interaction.channelId !== config.targetChannelIdCasos) {
                      await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${config.targetChannelIdCasos}>.`, ephemeral: true });
                      return;
                 }
 
-                // --- Iniciar el flujo de 2 pasos: Mostrar Select Menu para Tipo de Solicitud ---
                 try {
-                    const actionRow = buildTipoSolicitudSelectMenu(); // Usamos la función importada
+                    const actionRow = buildTipoSolicitudSelectMenu(); // Usa la función que lee de caseTypes
 
-                    // Guardar el estado pendiente del usuario
+                    // Guardar el estado pendiente del usuario, indicando que está en el paso 1 del flujo de casos
                     userPendingData.set(interaction.user.id, { type: 'caso', paso: 1 });
                     console.log(`Usuario ${interaction.user.tag} puesto en estado pendiente (caso, paso 1).`);
 
@@ -212,10 +204,9 @@ export default (
                     userPendingData.delete(interaction.user.id);
                 }
 
-            } else if (interaction.commandName === 'buscar-caso') { // --- MANEJADOR PARA /buscar-caso ---
+            } else if (interaction.commandName === 'buscar-caso') {
                  console.log(`Comando /buscar-caso recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-                 // --- Restricción de canal para /buscar-caso ---
                  if (config.targetChannelIdBuscarCaso && interaction.channelId !== config.targetChannelIdBuscarCaso) {
                      await interaction.reply({ content: `Este comando solo puede ser usado en el canal <#${config.targetChannelIdBuscarCaso}>.`, ephemeral: true });
                      return;
@@ -226,21 +217,19 @@ export default (
                  const numeroPedidoBuscar = interaction.options.getString('pedido');
                  console.log(`Número de pedido a buscar: ${numeroPedidoBuscar}`);
 
-                 // --- Validar que el valor buscado no sea la frase literal "Número de pedido" ---
                  if (numeroPedidoBuscar.trim().toLowerCase() === 'número de pedido') {
                       await interaction.editReply({ content: '❌ Por favor, ingresa un **número de pedido real** para buscar, no el nombre de la columna.', ephemeral: true });
                       return;
                  }
 
                  if (!numeroPedidoBuscar) {
-                     await interaction.editReply({ content: '❌ Debes proporcionar un número de pedido para buscar.', ephemeral: true });
+                     await interaction.editReply({ content: '❌ Debes proporcionar un número de pedido para buscar.', ephemeral: false }); // ephemeral: false para que todos vean el resultado
                      return;
                  }
 
-                 // --- Lógica para buscar en Google Sheets ---
                  if (!config.spreadsheetIdBuscarCaso || config.sheetsToSearch.length === 0) {
                      console.error("Error: Variables de entorno para la búsqueda de casos incompletas.");
-                     await interaction.editReply({ content: '❌ Error de configuración del bot: La búsqueda de casos no está configurada correctamente.', ephemeral: true });
+                     await interaction.editReply({ content: '❌ Error de configuración del bot: La búsqueda de casos no está configurada correctamente.', ephemeral: false }); // ephemeral: false
                      return;
                  }
 
@@ -249,13 +238,11 @@ export default (
                  let totalFound = 0;
 
                  try {
-                     // Iterar sobre cada nombre de sheet especificado
                      for (const sheetName of config.sheetsToSearch) {
                          console.log(`Buscando en la pestaña: "${sheetName}"`);
                          const range = `${sheetName}!A:Z`;
                          let response;
                          try {
-                             // Usamos sheetsInstance para la llamada a la API
                              response = await sheetsInstance.spreadsheets.values.get({
                                  spreadsheetId: config.spreadsheetIdBuscarCaso,
                                  range: range,
@@ -312,22 +299,25 @@ export default (
                          console.log(`Encontrados ${foundInSheet} resultados en la pestaña "${sheetName}".`);
                      }
 
-                     // --- Formatear y enviar la respuesta ---
                      if (foundRows.length > 0) {
                          searchSummary += `✅ Se encontraron **${foundRows.length}** coincidencias:\n\n`;
 
                          let detailedResults = '';
                          for (const found of foundRows) {
                              detailedResults += `**Pestaña:** "${found.sheet}", **Fila:** ${found.rowNumber}\n`;
+                             // Mostrar hasta 6 columnas para no exceder el límite de caracteres
                              const displayColumns = found.data.slice(0, Math.min(found.data.length, 6)).join(' | ');
                              detailedResults += `\`${displayColumns}\`\n\n`;
                          }
 
                          const fullMessage = searchSummary + detailedResults;
 
+                         // Verificar si el mensaje completo excede el límite de caracteres de Discord (2000)
                          if (fullMessage.length > 2000) {
+                              // Si es muy largo, enviar solo el resumen y sugerir revisar la hoja
                               await interaction.editReply({ content: searchSummary + "Los resultados completos son demasiado largos para mostrar aquí. Por favor, revisa la hoja de Google Sheets directamente.", ephemeral: false });
                          } else {
+                              // Si no excede, enviar el mensaje completo con los detalles
                               await interaction.editReply({ content: fullMessage, ephemeral: false });
                          }
 
@@ -365,12 +355,36 @@ export default (
                 const userId = interaction.user.id;
                 const pendingData = userPendingData.get(userId);
 
+                // Verificar si el usuario estaba en el paso 1 del flujo de casos
                 if (pendingData && pendingData.type === 'caso' && pendingData.paso === 1) {
-                    const selectedTipoSolicitud = interaction.values[0];
-                    console.log(`Tipo de Solicitud seleccionado: ${selectedTipoSolicitud}`);
+                    const selectedCaseTypeValue = interaction.values[0]; // Obtiene el value seleccionado (ej: 'SOLICITUD_BGH' o 'CANCELACION')
+                    console.log(`Tipo de Solicitud seleccionado (value): ${selectedCaseTypeValue}`);
 
-                    userPendingData.set(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud, interactionId: interaction.id });
-                    console.log(`Estado pendiente del usuario ${interaction.user.tag} actualizado (caso, paso 2, tipo ${selectedTipoSolicitud}).`);
+                    // --- Buscar la configuración completa para el tipo de caso seleccionado ---
+                    const selectedCaseTypeConfig = caseTypes.find(type => type.value === selectedCaseTypeValue);
+
+                    if (!selectedCaseTypeConfig) {
+                        console.error(`Error: No se encontró la configuración para el tipo de caso seleccionado: ${selectedCaseTypeValue}`);
+                         try {
+                             await interaction.update({
+                                content: '❌ Error interno: No se encontró la configuración para este tipo de solicitud.',
+                                components: [],
+                                ephemeral: true,
+                             });
+                         } catch (updateError) { console.error('Error al enviar mensaje de error de config faltante:', updateError); }
+                         userPendingData.delete(userId);
+                         return;
+                    }
+
+                    // Guardar el estado pendiente del usuario, incluyendo la configuración del tipo de caso
+                    userPendingData.set(userId, {
+                        type: 'caso',
+                        paso: 2,
+                        tipoSolicitud: selectedCaseTypeConfig.label, // Guardamos el label para mostrarlo
+                        caseTypeConfig: selectedCaseTypeConfig, // <-- Guardamos la configuración completa
+                        interactionId: interaction.id
+                    });
+                    console.log(`Estado pendiente del usuario ${interaction.user.tag} actualizado (caso, paso 2, tipo ${selectedCaseTypeConfig.label}).`);
 
 
                     // --- Responder al Select Menu: Editar el mensaje original y añadir un botón ---
@@ -383,7 +397,7 @@ export default (
                         const buttonActionRow = new ActionRowBuilder().addComponents(completeDetailsButton);
 
                         await interaction.update({
-                            content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Haz clic en el botón para completar los detalles.`,
+                            content: `Tipo de Solicitud seleccionado: **${selectedCaseTypeConfig.label}**. Haz clic en el botón para completar los detalles.`,
                             components: [buttonActionRow],
                             ephemeral: true,
                         });
@@ -400,22 +414,24 @@ export default (
                     }
 
                 } else {
+                     // Si el usuario interactuó con el Select Menu pero no estaba en el estado esperado
                      console.warn(`Interacción de Select Menu inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
                      try {
-                         await interaction.update({
+                         await interaction.update({ // Usamos update() para modificar el mensaje original
                             content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.',
-                            components: [],
-                            ephemeral: true,
+                            components: [], // Remove components
+                            ephemeral: true, // Keep it ephemeral
                          });
                      } catch (updateError) {
                          console.error('Error al enviar mensaje de error con update() en Select Menu inesperado:', updateError);
+                          // Si update falla, intentamos followUp como último recurso
                           try {
                              await interaction.followUp({ content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error al actualizar mensaje)', ephemeral: true });
                           } catch (fuError) {
                              console.error('Error adicional al intentar followUp después de fallo de update:', fuError);
                           }
                      }
-                     userPendingData.delete(userId);
+                     userPendingData.delete(userId); // Limpiar estado por si acaso
                 }
             }
         }
@@ -428,13 +444,32 @@ export default (
                 const userId = interaction.user.id;
                 const pendingData = userPendingData.get(userId);
 
-                if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
+                // Verificar si el usuario estaba en el paso 2 del flujo de casos y tenemos la configuración del tipo de caso
+                if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.caseTypeConfig) {
 
-                    // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO (Paso 3) !!!
+                    const modalIdToShow = pendingData.caseTypeConfig.modalId; // Obtenemos el ID del modal de la configuración
+
+                    // !!! MOSTRAR EL MODAL CORRESPONDIENTE (Paso 3) !!!
+                    let modal;
                     try {
-                        const modal = buildCasoModal(); // Usamos la función importada
+                        // Usamos un switch para llamar a la función de construcción del modal correcta
+                        switch (modalIdToShow) {
+                            case 'casoModal':
+                                modal = buildCasoModal();
+                                break;
+                            case 'cancelacionModal':
+                                modal = buildCancelacionModal();
+                                break;
+                            case 'reembolsoModal': // <-- Nuevo caso para el modal de Reembolso
+                                modal = buildReembolsoModal();
+                                break;
+                            // Añadir más casos aquí si tienes más tipos de modales
+                            default:
+                                throw new Error(`Modal ID desconocido en configuración del tipo de caso: ${modalIdToShow}`);
+                        }
+
                         await interaction.showModal(modal);
-                        console.log('Modal de registro de caso (Paso 3) mostrado al usuario.');
+                        console.log(`Modal con ID '${modalIdToShow}' mostrado al usuario.`);
 
                          if (interaction.replied) {
                             await interaction.editReply({
@@ -458,7 +493,7 @@ export default (
 
 
                     } catch (error) {
-                        console.error('Error al mostrar el Modal de registro de caso (Paso 3):', error);
+                        console.error('Error al mostrar el Modal correspondiente (Paso 3):', error);
                          if (!interaction.replied && !interaction.deferred) {
                             await interaction.reply({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
                          } else {
@@ -487,7 +522,7 @@ export default (
                      } catch (updateError) {
                          console.error('Error al enviar mensaje de error con update() en clic de botón inesperado:', updateError);
                           try {
-                             await interaction.followUp({ content: 'Este botón no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error al actualizar mensaje)', ephemeral: true });
+                             await interaction.followUp({ content: 'Esta botón no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error al actualizar mensaje)', ephemeral: true });
                           } catch (fuError) {
                              console.error('Error adicional al intentar followUp después de fallo de update:', fuError);
                           }
@@ -500,266 +535,157 @@ export default (
 
         // --- Manejar Sumisiones de Modals ---
         if (interaction.isModalSubmit()) {
-            // Verifica si la sumisión es de nuestro modal de Factura A (usando el customId)
-            if (interaction.customId === 'facturaAModal') {
-                 console.log(`Submisión del modal 'facturaAModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+             // Deferimos la respuesta inmediatamente para cualquier sumisión de modal
+             await interaction.deferReply({ ephemeral: true });
 
-                 await interaction.deferReply({ ephemeral: true });
+             const userId = interaction.user.id;
+             const pendingData = userPendingData.get(userId);
 
-                 // !!! RECUPERAR DATOS DE LOS CAMPOS DEL MODAL DE FACTURA A !!!
-                 const pedido = interaction.fields.getTextInputValue('pedidoInput');
-                 const caso = interaction.fields.getTextInputValue('casoInput');
-                 const email = interaction.fields.getTextInputValue('emailInput');
-                 const descripcion = interaction.fields.getTextInputValue('descripcionInput');
-
-                 console.log(`Datos del modal Factura A - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
-
-                 // --- VERIFICAR DUPLICADO ANTES DE ESCRIBIR ---
-                 const sheetRangeToCheckFacA = config.sheetRangeFacA.split('!')[0] + '!A:Z';
-                 const spreadsheetIdToCheckFacA = config.spreadsheetIdFacA;
-                 const pedidoNumberToCheckFacA = pedido;
-
-                 if (spreadsheetIdToCheckFacA && sheetRangeToCheckFacA) {
-                      console.log(`Verificando duplicado para pedido ${pedidoNumberToCheckFacA} en ${spreadsheetIdToCheckFacA}, rango ${sheetRangeToCheckFacA}...`);
-                      try {
-                           const isDuplicate = await checkIfPedidoExists(sheetsInstance, spreadsheetIdToCheckFacA, sheetRangeToCheckFacA, pedidoNumberToCheckFacA);
-
-                           if (isDuplicate) {
-                                console.log(`Pedido ${pedidoNumberToCheckFacA} ya existe. Cancelando registro.`);
-                                await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckFacA}** ya se encuentra registrado en la hoja de Factura A.`, ephemeral: true });
-                                userPendingData.delete(interaction.user.id);
-                                return;
-                           }
-                           console.log(`Pedido ${pedidoNumberToCheckFacA} no encontrado como duplicado. Procediendo a registrar.`);
-
-                      } catch (checkError) {
-                           console.error('Error durante la verificación de duplicado (Factura A):', checkError);
-                           await interaction.editReply({ content: `⚠️ Hubo un error al verificar si el pedido ya existe. Se intentará registrar de todos modos. Detalles: ${checkError.message}`, ephemeral: true });
-                      }
-                 } else {
-                     console.warn('Configuración incompleta para verificar duplicados (Factura A). Saltando verificación.');
-                 }
-                 // --- FIN VERIFICACIÓN DUPLICADO ---
-
-
-                 const fechaHoraActual = new Date();
-                 const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
-                     year: 'numeric', month: '2-digit', day: '2-digit',
-                     hour: '2-digit', minute: '2-digit', second: '2-digit',
-                     hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
-                 }).replace(/\//g, '-');
-
-
-                 const rowData = [
-                     pedido,
-                     fechaHoraFormateada,
-                     `#${caso}`,
-                     email,
-                     descripcion
-                 ];
-
-                 console.log('Datos a escribir en Sheet (Factura A):', rowData);
-
-                 // --- Escribir en Google Sheets (Factura A) y Poner al usuario en estado de espera de archivos ---
-                 let sheetSuccess = false;
-
+             // Verificar si el usuario estaba en el paso 2 y tiene la configuración del tipo de caso
+             if (!pendingData || pendingData.type !== 'caso' || pendingData.paso !== 2 || !pendingData.caseTypeConfig) {
+                 console.warn(`Sumisión de modal inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
                  try {
-                     if (config.spreadsheetIdFacA && config.sheetRangeFacA) {
-                          console.log('Intentando escribir en Google Sheets (Factura A)...');
-                          await sheetsInstance.spreadsheets.values.append({
-                              spreadsheetId: config.spreadsheetIdFacA,
-                              range: config.sheetRangeFacA,
-                              valueInputOption: 'RAW',
-                              insertDataOption: 'INSERT_ROWS',
-                              resource: { values: [rowData] },
-                          });
-                          console.log('Datos de Sheet (Factura A) agregados correctamente.');
-                          sheetSuccess = true;
+                     await interaction.editReply({ content: 'Esta sumisión de formulario no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
+                 } catch (editError) { console.error('Error al enviar mensaje de error en sumisión de modal inesperada:', editError); }
+                 userPendingData.delete(userId);
+                 return;
+             }
 
-                          if (config.parentDriveFolderId) {
-                               userPendingData.set(interaction.user.id, {
-                                    type: 'facturaA',
-                                    pedido: pedido,
-                                    timestamp: new Date()
-                               });
-                               console.log(`Usuario ${interaction.user.tag} (ID: ${interaction.user.id}) puesto en estado de espera de adjuntos para pedido ${pedido} (Factura A).`);
-                          } else {
-                               console.warn('PARENT_DRIVE_FOLDER_ID no configurado. No se pondrá al usuario en estado de espera de adjuntos para Factura A.');
-                          }
-
-                     } else {
-                          console.warn('Variables de Google Sheets (Factura A) no configuradas. Saltando escritura en Sheet y estado de espera para Factura A.');
-                     }
-
-                     let confirmationMessage = '';
-                     if (sheetSuccess) {
-                         confirmationMessage += '✅ Solicitud de Factura A cargada correctamente en Google Sheets.';
-                         if (config.parentDriveFolderId) {
-                              confirmationMessage += '\nPor favor, envía los archivos adjuntos para esta solicitud en un **mensaje separado** aquí mismo en este canal.';
-                         } else {
-                              confirmationMessage += '\n⚠️ La carga de archivos adjuntos a Google Drive no está configurada en el bot para Factura A.';
-                         }
-                     } else {
-                         confirmationMessage += '❌ Solicitud de Factura A no pudo cargarse en Google Sheets (configuración incompleta).';
-                         userPendingData.delete(interaction.user.id);
-                     }
-
-                     await interaction.editReply({ content: confirmationMessage, ephemeral: true });
-                     console.log('Confirmación de solicitud de Factura A enviada.');
-
-                 } catch (error) {
-                     console.error('Error general durante el procesamiento de la sumisión del modal (Factura A Sheets):', error);
-                     let errorMessage = '❌ Hubo un error al procesar tu solicitud de Factura A.';
-                      if (error.response && error.response.data) {
-                           if (error.response.data.error && error.response.data.error.message) {
-                                errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
-                           } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
-                                errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
-                           } else {
-                                errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
-                           }
-                      } else {
-                           errorMessage += ` Detalles: ${error.message}`;
-                      }
-                     errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
-
-                     await interaction.editReply({ content: errorMessage, ephemeral: true });
-                     console.log('Mensaje de error de sumisión de modal Factura A enviado.');
-                     userPendingData.delete(interaction.user.id);
-                 }
-
-            } else if (interaction.customId === 'casoModal') { // Manejador para la sumisión del modal de casos
-                 console.log(`Submisión del modal 'casoModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
-
-                 await interaction.deferReply({ ephemeral: true });
-
-                 const userId = interaction.user.id;
-                 const pendingData = userPendingData.get(userId);
-
-                 if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
-
-                     // !!! RECUPERAR DATOS DE LOS CAMPOS DEL MODAL DE CASOS !!!
-                     const pedido = interaction.fields.getTextInputValue('casoPedidoInput');
-                     const numeroCaso = interaction.fields.getTextInputValue('casoNumeroCasoInput');
-                     const datosContacto = interaction.fields.getTextInputValue('casoDatosContactoInput');
-                     const tipoSolicitud = pendingData.tipoSolicitud;
-
-                     console.log(`Datos del modal Caso - Pedido: ${pedido}, Número Caso: ${numeroCaso}, Tipo Solicitud (guardado): ${tipoSolicitud}, Datos Contacto: ${datosContacto}`);
-
-                     // --- VERIFICAR DUPLICADO ANTES DE ESCRIBIR ---
-                     const sheetRangeToCheckCaso = config.sheetRangeCasos.split('!')[0] + '!A:Z';
-                     const spreadsheetIdToCheckCaso = config.spreadsheetIdCasos;
-                     const pedidoNumberToCheckCaso = pedido;
-
-                     if (spreadsheetIdToCheckCaso && sheetRangeToCheckCaso) {
-                          console.log(`Verificando duplicado para pedido ${pedidoNumberToCheckCaso} en ${spreadsheetIdToCheckCaso}, rango ${sheetRangeToCheckCaso}...`);
-                          try {
-                               const isDuplicate = await checkIfPedidoExists(sheetsInstance, spreadsheetIdToCheckCaso, sheetRangeToCheckCaso, pedidoNumberToCheckCaso);
-
-                               if (isDuplicate) {
-                                    console.log(`Pedido ${pedidoNumberToCheckCaso} ya existe. Cancelando registro.`);
-                                    await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckCaso}** ya se encuentra registrado en la hoja de Casos.`, ephemeral: true });
-                                    userPendingData.delete(userId);
-                                    return;
-                               }
-                               console.log(`Pedido ${pedidoNumberToCheckCaso} no encontrado como duplicado. Procediendo a registrar.`);
-
-                          } catch (checkError) {
-                               console.error('Error durante la verificación de duplicado (Casos):', checkError);
-                               await interaction.editReply({ content: `⚠️ Hubo un error al verificar si el pedido ya existe. Se intentará registrar de todos modos. Detalles: ${checkError.message}`, ephemeral: true });
-                          }
-                     } else {
-                         console.warn('Configuración incompleta para verificar duplicados (Casos). Saltando verificación.');
-                     }
-                     // --- FIN VERIFICADO DUPLICADO ---
+             const caseTypeConfig = pendingData.caseTypeConfig; // Obtenemos la configuración del tipo de caso
+             const tipoSolicitudLabel = pendingData.tipoSolicitud; // Obtenemos el label seleccionado
 
 
-                     const fechaHoraActual = new Date();
-                     const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
-                         year: 'numeric', month: '2-digit', day: '2-digit',
-                         hour: '2-digit', minute: '2-digit', second: '2-digit',
-                         hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
-                     }).replace(/\//g, '-');
+             // --- VERIFICAR DUPLICADO ANTES DE ESCRIBIR ---
+             // Usar la configuración de duplicateCheck del tipo de caso seleccionado
+             const duplicateCheckConfig = caseTypeConfig.duplicateCheck;
+             let isDuplicate = false;
 
-                     const agenteDiscord = interaction.member ? interaction.member.displayName : interaction.user.username;
+             // Solo intentar verificar duplicados si la configuración existe y es válida
+             if (duplicateCheckConfig && duplicateCheckConfig.sheetId && duplicateCheckConfig.sheetRange && duplicateCheckConfig.columnHeader) {
+                  const sheetRangeToCheck = duplicateCheckConfig.sheetRange;
+                  const spreadsheetIdToCheck = duplicateCheckConfig.sheetId;
+                  // Buscar el campo de pedido en la estructura de datos del modal
+                  const pedidoFieldDefinition = caseTypeConfig.rowDataStructure.find(item => item.fieldId && item.sheetColumn.toLowerCase().includes('pedido'));
 
-                     const rowDataCaso = [
-                         pedido,
-                         fechaHoraFormateada,
-                         agenteDiscord,
-                         numeroCaso,
-                         tipoSolicitud,
-                         datosContacto
-                     ];
+                  // Si encontramos la definición del campo de pedido en la estructura de datos
+                  if (pedidoFieldDefinition) {
+                       const pedidoNumberToCheck = interaction.fields.getTextInputValue(pedidoFieldDefinition.fieldId);
 
-                     console.log('Datos a escribir en Sheet (Casos):', rowDataCaso);
+                       if (pedidoNumberToCheck) { // Solo verificar si se ingresó un número de pedido
+                            console.log(`Verificando duplicado para pedido ${pedidoNumberToCheck} en ${spreadsheetIdToCheck}, rango ${sheetRangeToCheck}...`);
+                            try {
+                                 isDuplicate = await checkIfPedidoExists(sheetsInstance, spreadsheetIdToCheck, sheetRangeToCheck, pedidoNumberToCheck);
 
-                     // --- Escribir en Google Sheets (Casos) ---
-                     let sheetSuccess = false;
-                     try {
-                         if (config.spreadsheetIdCasos && config.sheetRangeCasos) {
-                             console.log('Intentando escribir en Google Sheets (Casos)...');
-                             await sheetsInstance.spreadsheets.values.append({
-                                 spreadsheetId: config.spreadsheetIdCasos,
-                                 range: config.sheetRangeCasos,
-                                 valueInputOption: 'RAW',
-                                 insertDataOption: 'INSERT_ROWS',
-                                 resource: { values: [rowDataCaso] },
-                             });
-                             console.log('Datos de Sheet (Casos) agregados correctamente.');
-                             sheetSuccess = true;
-                         } else {
-                             console.warn('Variables de Google Sheets (Casos) no configuradas. Saltando escritura en Sheet para casos.');
-                         }
+                                 if (isDuplicate) {
+                                      console.log(`Pedido ${pedidoNumberToCheck} ya existe. Cancelando registro.`);
+                                      await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheck}** ya se encuentra registrado en la hoja de "${caseTypeConfig.label}".`, ephemeral: true });
+                                      userPendingData.delete(userId);
+                                      return; // Salir si es un duplicado
+                                 }
+                                 console.log(`Pedido ${pedidoNumberToCheck} no encontrado como duplicado. Procediendo a registrar.`);
 
-                         let confirmationMessage = '';
-                         if (sheetSuccess) {
-                             confirmationMessage += '✅ Caso registrado correctamente en Google Sheets.';
-                         } else {
-                             confirmationMessage += '❌ El caso no pudo registrarse en Google Sheets (configuración incompleta).';
-                         }
+                            } catch (checkError) {
+                                 console.error(`Error durante la verificación de duplicado para tipo "${caseTypeConfig.label}":`, checkError);
+                                 await interaction.editReply({ content: `⚠️ Hubo un error al verificar si el pedido ya existe para este tipo de caso. Se intentará registrar de todos modos. Detalles: ${checkError.message}`, ephemeral: true });
+                                 // No retornamos, continuamos con el registro
+                            }
+                       } else {
+                           console.log(`Campo de pedido vacío para el tipo "${caseTypeConfig.label}". Saltando verificación de duplicados.`);
+                       }
+                  } else {
+                      console.warn(`No se pudo determinar el campo de pedido en rowDataStructure para la verificación de duplicados del tipo "${caseTypeConfig.label}". Saltando verificación.`);
+                  }
+             } else {
+                 console.warn(`Configuración de verificación de duplicados incompleta o faltante para el tipo "${caseTypeConfig.label}". Saltando verificación.`);
+             }
+             // --- FIN VERIFICACIÓN DUPLICADO ---
 
-                         await interaction.editReply({ content: confirmationMessage, ephemeral: true });
-                         console.log('Confirmación de registro de caso enviada.');
 
-                     } catch (error) {
-                         console.error('Error general durante el procesamiento de la sumisión del modal (Casos Sheets):', error);
-                         let errorMessage = '❌ Hubo un error al procesar el registro de tu caso.';
-                          if (error.response && error.response.data) {
-                               if (error.response.data.error && error.response.data.error.message) {
-                                    errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
-                               } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
-                                     errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
-                                } else {
-                                     errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
-                                }
-                           } else {
-                                errorMessage += ` Detalles: ${error.message}`;
-                           }
-                         errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
+             // --- Construir la fila de datos dinámicamente usando rowDataStructure ---
+             const rowData = [];
+             const fechaHoraActual = new Date();
+             const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
+                 year: 'numeric', month: '2-digit', day: '2-digit',
+                 hour: '2-digit', minute: '2-digit', second: '2-digit',
+                 hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
+             }).replace(/\//g, '-');
+             const agenteDiscord = interaction.member ? interaction.member.displayName : interaction.user.username;
 
-                         await interaction.editReply({ content: errorMessage, ephemeral: true });
-                         console.log('Mensaje de error de sumisión de modal Caso enviado.');
-                     } finally {
-                         userPendingData.delete(userId);
-                         console.log(`Estado pendiente del usuario ${interaction.user.tag} limpiado.`);
-                     }
 
+             for (const item of caseTypeConfig.rowDataStructure) {
+                 if (item.fieldId) {
+                     // Si es un campo del modal, obtener su valor
+                     const fieldValue = interaction.fields.getTextInputValue(item.fieldId);
+                     rowData.push(fieldValue);
+                 } else if (item.type === 'timestamp') {
+                     // Si es una marca de tiempo, usar la fecha/hora actual
+                     rowData.push(fechaHoraFormateada);
+                 } else if (item.type === 'discordUser') {
+                     // Si es el usuario de Discord, usar su nombre
+                     rowData.push(agenteDiscord);
+                 } else if (item.type === 'selectedType') {
+                     // Si es el tipo seleccionado del menú, usar el label
+                     rowData.push(tipoSolicitudLabel);
                  } else {
-                     console.warn(`Sumisión de modal 'casoModal' inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
-                     try {
-                         await interaction.editReply({ content: 'Esta sumisión de formulario no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
-                     } catch (editError) {
-                          console.error('Error al enviar mensaje de error con editReply en sumisión de modal inesperada:', editError);
-                          try {
-                             await interaction.followUp({ content: 'Esta sumisión de formulario no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error)', ephemeral: true });
-                          } catch (fuError) {
-                             console.error('Error adicional al intentar followUp después de fallo de editReply:', fuError);
-                          }
-                     }
-                     userPendingData.delete(userId);
+                     // Si es un tipo desconocido o no especificado, añadir un valor vacío o un placeholder
+                     console.warn(`Tipo de dato desconocido en rowDataStructure para "${caseTypeConfig.label}": ${JSON.stringify(item)}. Añadiendo celda vacía.`);
+                     rowData.push('');
                  }
-            }
+             }
+
+             console.log(`Datos a escribir en Sheet para "${caseTypeConfig.label}":`, rowData);
+
+
+             // --- Escribir en Google Sheets ---
+             let sheetSuccess = false;
+             try {
+                 if (caseTypeConfig.sheetId && caseTypeConfig.sheetRange) {
+                     console.log(`Intentando escribir en Google Sheets (Tipo: ${caseTypeConfig.label})...`);
+                     await sheetsInstance.spreadsheets.values.append({
+                         spreadsheetId: caseTypeConfig.sheetId, // Usamos el ID de la hoja del tipo de caso
+                         range: caseTypeConfig.sheetRange,   // Usamos el rango del tipo de caso
+                         valueInputOption: 'RAW',
+                         insertDataOption: 'INSERT_ROWS',
+                         resource: { values: [rowData] },
+                     });
+                     console.log(`Datos de Sheet (Tipo: ${caseTypeConfig.label}) agregados correctamente.`);
+                     sheetSuccess = true;
+                 } else {
+                     console.warn(`Variables de Google Sheets no configuradas para el tipo "${caseTypeConfig.label}". Saltando escritura.`);
+                 }
+
+                 let confirmationMessage = '';
+                 if (sheetSuccess) {
+                     confirmationMessage += `✅ Caso de "${caseTypeConfig.label}" registrado correctamente en Google Sheets.`;
+                 } else {
+                     confirmationMessage += `❌ El caso de "${caseTypeConfig.label}" no pudo registrarse en Google Sheets (configuración incompleta).`;
+                 }
+
+                 await interaction.editReply({ content: confirmationMessage, ephemeral: true });
+                 console.log('Confirmación de registro de caso enviada.');
+
+             } catch (error) {
+                 console.error(`Error general durante el procesamiento de la sumisión del modal (Tipo: ${caseTypeConfig.label}):`, error);
+                 let errorMessage = `❌ Hubo un error al procesar el registro de tu caso de "${caseTypeConfig.label}".`;
+                  if (error.response && error.response.data) {
+                       if (error.response.data.error && error.response.data.error.message) {
+                            errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                       } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
+                             errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                        } else {
+                             errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
+                        }
+                   } else {
+                        errorMessage += ` Detalles: ${error.message}`;
+                   }
+                 errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
+
+                 await interaction.editReply({ content: errorMessage, ephemeral: true });
+                 console.log('Mensaje de error de sumisión de modal enviado.');
+             } finally {
+                 userPendingData.delete(userId);
+                 console.log(`Estado pendiente del usuario ${interaction.user.tag} limpiado.`);
+             }
         }
     });
 };
