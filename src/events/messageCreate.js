@@ -82,8 +82,20 @@ Este comando inicia el proceso para registrar un nuevo caso de cambio o devoluci
                 await message.reply({ content: helpMessage, ephemeral: false });
                 return; // Salir del listener después de responder
             }
-        }
+            if (messageContentLower.includes('comandos') || messageContentLower.includes('funciones') || messageContentLower.includes('como') ) {
+                const helpMessage = `
+Lista de comandos:
 
+    # /factura-a  -  Este comando es para generar una solicitud de factura A.
+    # /trackig - Este comando sirve para buscar información de un trackign de Andreani.
+    # /buscar-caso - Este comando sirve para buscar un caso cargado en nuestra sheet con el número de pedido.
+    # /agregar-caso - Este comando sirve para agregar un caso a la pestaña de SOLICITUDES BGH 2025 de nuestra sheet.
+`;
+                await message.reply({ content: helpMessage, ephemeral: false });
+                return; // Salir del listener después de responder
+            }
+        
+}
 
         // --- Lógica para recibir archivos adjuntos (solo para Factura A) ---
         // Restringir la recepción de adjuntos al canal de Factura A (si está configurado y es diferente al canal de ayuda)
