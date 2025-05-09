@@ -35,8 +35,8 @@ export default (
     buildCasoModal,
     checkIfPedidoExists,
     getAndreaniTracking,
-    findOrCreateDriveFolder, // Recibir la función
-    uploadFileToDrive // Recibir la función
+    findOrCreateDriveFolder,
+    uploadFileToDrive
 ) => {
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
@@ -56,17 +56,14 @@ export default (
                 // !!! MOSTRAR EL MODAL DE Factura A !!!
                 try {
                     const modal = buildFacturaAModal(); // Usamos la función importada
-                    // showModal() es una respuesta válida a un comando de barra
                     await interaction.showModal(modal);
                     console.log('Modal de Factura A mostrado al usuario.');
 
                 } catch (error) {
                     console.error('Error al mostrar el modal de Factura A:', error);
-                    // Si showModal falla, debemos responder de otra manera (reply o defer+editReply)
                     if (!interaction.replied && !interaction.deferred) {
                          await interaction.reply({ content: 'Hubo un error al abrir el formulario de solicitud de Factura A. Por favor, inténtalo de nuevo.', ephemeral: true });
                     } else {
-                         // Si ya se respondió o deferrió, no hacer nada más o loggear
                          console.error('Error al mostrar modal después de responder/deferir.');
                     }
                     userPendingData.delete(interaction.user.id);
@@ -80,8 +77,7 @@ export default (
                      return;
                  }
 
-                 // Deferimos la respuesta inmediatamente ya que la consulta a la API es asíncrona
-                 await interaction.deferReply({ ephemeral: false }); // Puede ser efímero o no, según prefieras
+                 await interaction.deferReply({ ephemeral: false });
 
                  const trackingNumber = interaction.options.getString('numero');
                  console.log(`Número de tracking recibido: ${trackingNumber}`);
@@ -95,14 +91,13 @@ export default (
                  let trackingInfo = null;
 
                  try {
-                     // Usar la función importada y pasar el encabezado de autorización
                      const trackingData = await getAndreaniTracking(trackingNumber, config.andreaniAuthHeader);
 
-                     // --- Extraer la información del JSON (ajustar según la API oficial si cambias) ---
+                     // --- Extraer la información del JSON y formatear ---
                      if (trackingData && trackingData.procesoActual && trackingData.timelines) {
                          const procesoActual = trackingData.procesoActual;
                          const fechaEstimadaDeEntrega = trackingData.fechaEstimadaDeEntrega;
-                         const timelines = trackingData.timelines;
+                         let timelines = trackingData.timelines; // Usamos let para poder reasignar después de ordenar
                          const numeroAndreani = trackingData.numeroAndreani;
 
                          trackingInfo = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n`;
@@ -114,12 +109,28 @@ export default (
                          }
 
                          if (timelines && timelines.length > 0) {
-                             timelines.sort((a, b) => a.orden - b.orden);
+                             // --- Ordenar las etapas principales por fecha del último evento (descendente) ---
+                             // Esto ayuda a que las etapas más recientes aparezcan primero
+                             timelines.sort((a, b) => {
+                                 const dateA = a.fechaUltimoEvento ? new Date(a.fechaUltimoEvento).getTime() : 0;
+                                 const dateB = b.fechaUltimoEvento ? new Date(b.fechaUltimoEvento).getTime() : 0;
+                                 return dateB - dateA; // Orden descendente
+                             });
+
 
                              trackingInfo += '\n\nHistorial:';
+                             // Iterar sobre cada timeline (cada etapa principal)
                              for (const timeline of timelines) {
                                  if (timeline.traducciones && timeline.traducciones.length > 0) {
-                                     for (const evento of timeline.traducciones) {
+                                     // --- Ordenar los eventos detallados (traducciones) por fecha (descendente) ---
+                                     const sortedTraducciones = timeline.traducciones.sort((a, b) => {
+                                         const dateA = a.fechaEvento ? new Date(a.fechaEvento).getTime() : 0;
+                                         const dateB = b.fechaEvento ? new Date(b.fechaEvento).getTime() : 0;
+                                         return dateB - dateA; // Orden descendente
+                                     });
+
+                                     // Iterar sobre cada traducción/evento dentro de la etapa (ahora ordenados)
+                                     for (const evento of sortedTraducciones) { // Usamos el array ordenado
                                          const fechaHora = evento.fechaEvento ? new Date(evento.fechaEvento).toLocaleString('es-AR', {
                                              year: 'numeric', month: '2-digit', day: '2-digit',
                                              hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
@@ -132,6 +143,7 @@ export default (
                                          }
                                      }
                                  } else if (timeline.titulo) {
+                                     // Si no hay traducciones detalladas, al menos mostrar el título de la etapa
                                      const fechaUltimoEvento = timeline.fechaUltimoEvento ? new Date(timeline.fechaUltimoEvento).toLocaleString('es-AR', {
                                          year: 'numeric', month: '2-digit', day: '2-digit',
                                          hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
@@ -140,6 +152,7 @@ export default (
                                  }
                              }
 
+                             // Verificar si se añadió algo al historial después de iterar
                              const initialHistoryString = `📦 Estado del tracking **${numeroAndreani || trackingNumber}**:\n${procesoActual.titulo}` + (fechaEstimadaDeEntrega ? ` - ${fechaEstimadaDeEntrega.replace(/<\/?b>/g, '').replace(/<\/?br>/g, '')}` : '') + '\n\nHistorial:';
                              if (trackingInfo === initialHistoryString) {
                                   trackingInfo += '\nSin historial de eventos detallado disponible.';
@@ -153,7 +166,7 @@ export default (
                          console.log(`Información de tracking extraída y formateada.`);
 
                      } else {
-                         trackingInfo = `😕 No se pudo encontrar la información de tracking en la respuesta de la API para el número **${trackingNumber}**. La estructura de la respuesta podría haber cambiado.`;
+                         trackingInfo = `😕 No se pudo encontrar la información de tracking en la respuesta de la API para el número **${trackingNumber}**. La estructura de la respuesta podría haber cambiado o el número es incorrecto.`;
                          console.log(`Estructura de respuesta JSON inesperada para ${trackingNumber}.`);
                      }
 
@@ -163,7 +176,6 @@ export default (
                      trackingInfo = `❌ Hubo un error al consultar el estado del tracking para **${trackingNumber}**. Detalles: ${error.message}`;
                  }
 
-                 // Usamos editReply porque ya deferimos la respuesta
                  await interaction.editReply({ content: trackingInfo, ephemeral: false });
                  console.log('Respuesta de tracking enviada.');
 
@@ -184,8 +196,6 @@ export default (
                     userPendingData.set(interaction.user.id, { type: 'caso', paso: 1 });
                     console.log(`Usuario ${interaction.user.tag} puesto en estado pendiente (caso, paso 1).`);
 
-                    // Responder con el mensaje que contiene el Select Menu. Ephemeral para no saturar el canal.
-                    // reply() es una respuesta válida a un comando de barra
                     await interaction.reply({
                         content: 'Por favor, selecciona el tipo de solicitud:',
                         components: [actionRow],
@@ -212,8 +222,7 @@ export default (
                      return;
                  }
 
-                 // Deferimos la respuesta inmediatamente ya que la búsqueda puede tardar
-                 await interaction.deferReply({ ephemeral: false }); // Puede ser efímero o no
+                 await interaction.deferReply({ ephemeral: false });
 
                  const numeroPedidoBuscar = interaction.options.getString('pedido');
                  console.log(`Número de pedido a buscar: ${numeroPedidoBuscar}`);
@@ -351,26 +360,22 @@ export default (
 
         // --- Manejar Interacciones de Select Menu ---
         if (interaction.isStringSelectMenu()) {
-            // Verifica si la interacción es de nuestro Select Menu de Tipo de Solicitud
             if (interaction.customId === 'casoTipoSolicitudSelect') {
                 console.log(`Selección en Select Menu 'casoTipoSolicitudSelect' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
                 const userId = interaction.user.id;
                 const pendingData = userPendingData.get(userId);
 
-                // Verificar si el usuario estaba en el paso 1 del flujo de casos
                 if (pendingData && pendingData.type === 'caso' && pendingData.paso === 1) {
                     const selectedTipoSolicitud = interaction.values[0];
                     console.log(`Tipo de Solicitud seleccionado: ${selectedTipoSolicitud}`);
 
-                    // Actualizar el estado pendiente del usuario con el tipo de solicitud seleccionado
                     userPendingData.set(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud, interactionId: interaction.id });
                     console.log(`Estado pendiente del usuario ${interaction.user.tag} actualizado (caso, paso 2, tipo ${selectedTipoSolicitud}).`);
 
 
                     // --- Responder al Select Menu: Editar el mensaje original y añadir un botón ---
                     try {
-                        // Crear el botón para completar los detalles
                         const completeDetailsButton = new ButtonBuilder()
                             .setCustomId('completeCasoDetailsButton')
                             .setLabel('Completar Detalles del Caso')
@@ -378,17 +383,15 @@ export default (
 
                         const buttonActionRow = new ActionRowBuilder().addComponents(completeDetailsButton);
 
-                        // Usamos update() para editar el mensaje original que contenía el Select Menu
                         await interaction.update({
                             content: `Tipo de Solicitud seleccionado: **${selectedTipoSolicitud}**. Haz clic en el botón para completar los detalles.`,
-                            components: [buttonActionRow], // Reemplazar el Select Menu con el botón
-                            ephemeral: true, // Mantener como efímero
+                            components: [buttonActionRow],
+                            ephemeral: true,
                         });
                         console.log('Mensaje del Select Menu editado y botón "Completar Detalles" mostrado.');
 
                     } catch (error) {
                         console.error('Error al responder al Select Menu o mostrar el botón:', error);
-                        // Si update() falla, intentamos un followUp como fallback, aunque puede fallar en mensajes efímeros
                          try {
                             await interaction.followUp({ content: 'Hubo un error al procesar tu selección. Por favor, intenta usar el comando /agregar-caso de nuevo.', ephemeral: true });
                          } catch (fuError) {
@@ -398,65 +401,56 @@ export default (
                     }
 
                 } else {
-                     // Si el usuario interactuó con el Select Menu pero no estaba en el estado esperado
                      console.warn(`Interacción de Select Menu inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
-                     // *** CORRECCIÓN: Usar update() o editReply() en lugar de followUp para responder a interacciones en mensajes efímeros ***
                      try {
-                         await interaction.update({ // Usamos update() para modificar el mensaje original
+                         await interaction.update({
                             content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.',
-                            components: [], // Remove components
-                            ephemeral: true, // Keep it ephemeral
+                            components: [],
+                            ephemeral: true,
                          });
                      } catch (updateError) {
                          console.error('Error al enviar mensaje de error con update() en Select Menu inesperado:', updateError);
-                          // Si update falla, intentamos followUp como último recurso
                           try {
                              await interaction.followUp({ content: 'Esta selección no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error al actualizar mensaje)', ephemeral: true });
                           } catch (fuError) {
                              console.error('Error adicional al intentar followUp después de fallo de update:', fuError);
                           }
                      }
-                     userPendingData.delete(userId); // Limpiar estado por si acaso
+                     userPendingData.delete(userId);
                 }
             }
         }
 
         // --- Manejar Interacciones de Botón ---
         if (interaction.isButton()) {
-            // Verifica si la interacción es de nuestro botón para completar detalles del caso
             if (interaction.customId === 'completeCasoDetailsButton') {
                 console.log(`Clic en botón 'completeCasoDetailsButton' recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
                 const userId = interaction.user.id;
                 const pendingData = userPendingData.get(userId);
 
-                // Verificar si el usuario estaba en el paso 2 del flujo de casos (esperando el modal)
                 if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
 
                     // !!! MOSTRAR EL MODAL DE REGISTRO DE CASO (Paso 3) !!!
                     try {
                         const modal = buildCasoModal(); // Usamos la función importada
-                        // showModal() es una respuesta válida a una interacción de componente
                         await interaction.showModal(modal);
                         console.log('Modal de registro de caso (Paso 3) mostrado al usuario.');
 
-                        // Opcional: Editar el mensaje del botón para indicar que el modal se mostró
-                        // editReply es válido después de showModal si el mensaje original era respondido (no deferido)
-                        // O update si el mensaje original era ephemeral y tenía componentes
-                         if (interaction.replied) { // Si la interacción original ya fue respondida (ej: con reply)
+                         if (interaction.replied) {
                             await interaction.editReply({
                                 content: `Tipo de Solicitud seleccionado: **${pendingData.tipoSolicitud}**. Por favor, completa el formulario que apareció.`,
                                 components: [],
                                 ephemeral: true,
                             });
-                         } else if (interaction.deferred) { // Si la interacción original fue deferida
+                         } else if (interaction.deferred) {
                              await interaction.editReply({
                                 content: `Tipo de Solicitud seleccionado: **${pendingData.tipoSolicitud}**. Por favor, completa el formulario que apareció.`,
                                 components: [],
                                 ephemeral: true,
                             });
-                         } else { // Si la interacción original no fue respondida ni deferida (como en este caso, que es una interacción de componente en un mensaje efímero)
-                            await interaction.update({ // update() es el método correcto aquí
+                         } else {
+                            await interaction.update({
                                 content: `Tipo de Solicitud seleccionado: **${pendingData.tipoSolicitud}**. Por favor, completa el formulario que apareció.`,
                                 components: [],
                                 ephemeral: true,
@@ -466,12 +460,9 @@ export default (
 
                     } catch (error) {
                         console.error('Error al mostrar el Modal de registro de caso (Paso 3):', error);
-                        // Si showModal falla, debemos responder de otra manera
                          if (!interaction.replied && !interaction.deferred) {
-                            // Intentar responder al fallo del modal
                             await interaction.reply({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
                          } else {
-                              // Si ya se respondió o deferrió (ej: el mensaje original del botón), podemos intentar editarlo o un followUp
                              try {
                                  await interaction.editReply({ content: 'Hubo un error al abrir el formulario de detalles del caso. Por favor, inténtalo de nuevo.', ephemeral: true });
                              } catch (editError) {
@@ -487,18 +478,15 @@ export default (
                     }
 
                 } else {
-                     // Si el usuario hizo clic en el botón pero no estaba en el estado esperado
                      console.warn(`Clic en botón inesperado de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
-                     // *** CORRECCIÓN: Usar update() o editReply() en lugar de followUp para responder a interacciones en mensajes efímeros ***
                      try {
-                         await interaction.update({ // Usamos update() para modificar el mensaje original
+                         await interaction.update({
                             content: 'Este botón no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.',
-                            components: [], // Remove components
-                            ephemeral: true, // Keep it ephemeral
+                            components: [],
+                            ephemeral: true,
                          });
                      } catch (updateError) {
                          console.error('Error al enviar mensaje de error con update() en clic de botón inesperado:', updateError);
-                          // Si update falla, intentamos followUp como último recurso
                           try {
                              await interaction.followUp({ content: 'Este botón no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error al actualizar mensaje)', ephemeral: true });
                           } catch (fuError) {
@@ -517,7 +505,6 @@ export default (
             if (interaction.customId === 'facturaAModal') {
                  console.log(`Submisión del modal 'facturaAModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-                 // Deferimos la respuesta inmediatamente ya que la escritura en Sheets y subida a Drive son asíncronas
                  await interaction.deferReply({ ephemeral: true });
 
                  // !!! RECUPERAR DATOS DE LOS CAMPOS DEL MODAL DE FACTURA A !!!
@@ -529,20 +516,18 @@ export default (
                  console.log(`Datos del modal Factura A - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
 
                  // --- VERIFICAR DUPLICADO ANTES DE ESCRIBIR ---
-                 const sheetRangeToCheckFacA = config.sheetRangeFacA.split('!')[0] + '!A:Z'; // Leer hasta la columna Z para encontrar el encabezado
+                 const sheetRangeToCheckFacA = config.sheetRangeFacA.split('!')[0] + '!A:Z';
                  const spreadsheetIdToCheckFacA = config.spreadsheetIdFacA;
                  const pedidoNumberToCheckFacA = pedido;
 
                  if (spreadsheetIdToCheckFacA && sheetRangeToCheckFacA) {
                       console.log(`Verificando duplicado para pedido ${pedidoNumberToCheckFacA} en ${spreadsheetIdToCheckFacA}, rango ${sheetRangeToCheckFacA}...`);
                       try {
-                           // Usar la función importada y pasar la instancia de sheets
                            const isDuplicate = await checkIfPedidoExists(sheetsInstance, spreadsheetIdToCheckFacA, sheetRangeToCheckFacA, pedidoNumberToCheckFacA);
 
                            if (isDuplicate) {
                                 console.log(`Pedido ${pedidoNumberToCheckFacA} ya existe. Cancelando registro.`);
-                                // Usamos editReply porque ya deferimos
-                                await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckCaso}** ya se encuentra registrado en la hoja de Factura A.`, ephemeral: true }); // <-- Corregido mensaje
+                                await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckFacA}** ya se encuentra registrado en la hoja de Factura A.`, ephemeral: true });
                                 userPendingData.delete(interaction.user.id);
                                 return;
                            }
@@ -550,9 +535,7 @@ export default (
 
                       } catch (checkError) {
                            console.error('Error durante la verificación de duplicado (Factura A):', checkError);
-                           // Si la verificación falla, informamos pero continuamos para no bloquear
                            await interaction.editReply({ content: `⚠️ Hubo un error al verificar si el pedido ya existe. Se intentará registrar de todos modos. Detalles: ${checkError.message}`, ephemeral: true });
-                           // No retornamos, continuamos con el registro
                       }
                  } else {
                      console.warn('Configuración incompleta para verificar duplicados (Factura A). Saltando verificación.');
@@ -584,7 +567,6 @@ export default (
                  try {
                      if (config.spreadsheetIdFacA && config.sheetRangeFacA) {
                           console.log('Intentando escribir en Google Sheets (Factura A)...');
-                          // Usamos sheetsInstance para la llamada a la API
                           await sheetsInstance.spreadsheets.values.append({
                               spreadsheetId: config.spreadsheetIdFacA,
                               range: config.sheetRangeFacA,
@@ -623,7 +605,6 @@ export default (
                          userPendingData.delete(interaction.user.id);
                      }
 
-                     // Usamos editReply porque ya deferimos
                      await interaction.editReply({ content: confirmationMessage, ephemeral: true });
                      console.log('Confirmación de solicitud de Factura A enviada.');
 
@@ -643,7 +624,6 @@ export default (
                       }
                      errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
 
-                     // Usamos editReply porque ya deferimos
                      await interaction.editReply({ content: errorMessage, ephemeral: true });
                      console.log('Mensaje de error de sumisión de modal Factura A enviado.');
                      userPendingData.delete(interaction.user.id);
@@ -652,7 +632,6 @@ export default (
             } else if (interaction.customId === 'casoModal') { // Manejador para la sumisión del modal de casos
                  console.log(`Submisión del modal 'casoModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
-                 // Deferimos la respuesta inmediatamente ya que la escritura en Sheets es asíncrona
                  await interaction.deferReply({ ephemeral: true });
 
                  const userId = interaction.user.id;
@@ -669,19 +648,17 @@ export default (
                      console.log(`Datos del modal Caso - Pedido: ${pedido}, Número Caso: ${numeroCaso}, Tipo Solicitud (guardado): ${tipoSolicitud}, Datos Contacto: ${datosContacto}`);
 
                      // --- VERIFICAR DUPLICADO ANTES DE ESCRIBIR ---
-                     const sheetRangeToCheckCaso = config.sheetRangeCasos.split('!')[0] + '!A:Z'; // Leer hasta la columna Z para encontrar el encabezado
+                     const sheetRangeToCheckCaso = config.sheetRangeCasos.split('!')[0] + '!A:Z';
                      const spreadsheetIdToCheckCaso = config.spreadsheetIdCasos;
                      const pedidoNumberToCheckCaso = pedido;
 
                      if (spreadsheetIdToCheckCaso && sheetRangeToCheckCaso) {
                           console.log(`Verificando duplicado para pedido ${pedidoNumberToCheckCaso} en ${spreadsheetIdToCheckCaso}, rango ${sheetRangeToCheckCaso}...`);
                           try {
-                               // Usar la función importada y pasar la instancia de sheets
                                const isDuplicate = await checkIfPedidoExists(sheetsInstance, spreadsheetIdToCheckCaso, sheetRangeToCheckCaso, pedidoNumberToCheckCaso);
 
                                if (isDuplicate) {
                                     console.log(`Pedido ${pedidoNumberToCheckCaso} ya existe. Cancelando registro.`);
-                                    // Usamos editReply porque ya deferimos
                                     await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckCaso}** ya se encuentra registrado en la hoja de Casos.`, ephemeral: true });
                                     userPendingData.delete(userId);
                                     return;
@@ -690,14 +667,12 @@ export default (
 
                           } catch (checkError) {
                                console.error('Error durante la verificación de duplicado (Casos):', checkError);
-                               // Si la verificación falla, informamos pero continuamos para no bloquear
                                await interaction.editReply({ content: `⚠️ Hubo un error al verificar si el pedido ya existe. Se intentará registrar de todos modos. Detalles: ${checkError.message}`, ephemeral: true });
-                               // No retornamos, continuamos con el registro
                           }
                      } else {
                          console.warn('Configuración incompleta para verificar duplicados (Casos). Saltando verificación.');
                      }
-                     // --- FIN VERIFICACIÓN DUPLICADO ---
+                     // --- FIN VERIFICADO DUPLICADO ---
 
 
                      const fechaHoraActual = new Date();
@@ -725,7 +700,6 @@ export default (
                      try {
                          if (config.spreadsheetIdCasos && config.sheetRangeCasos) {
                              console.log('Intentando escribir en Google Sheets (Casos)...');
-                             // Usamos sheetsInstance para la llamada a la API
                              await sheetsInstance.spreadsheets.values.append({
                                  spreadsheetId: config.spreadsheetIdCasos,
                                  range: config.sheetRangeCasos,
@@ -746,7 +720,6 @@ export default (
                              confirmationMessage += '❌ El caso no pudo registrarse en Google Sheets (configuración incompleta).';
                          }
 
-                         // Usamos editReply porque ya deferimos
                          await interaction.editReply({ content: confirmationMessage, ephemeral: true });
                          console.log('Confirmación de registro de caso enviada.');
 
@@ -766,7 +739,6 @@ export default (
                            }
                          errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
 
-                         // Usamos editReply porque ya deferimos
                          await interaction.editReply({ content: errorMessage, ephemeral: true });
                          console.log('Mensaje de error de sumisión de modal Caso enviado.');
                      } finally {
@@ -775,15 +747,11 @@ export default (
                      }
 
                  } else {
-                     // Si el usuario envió el modal pero no estaba en el estado esperado (paso 2)
                      console.warn(`Sumisión de modal 'casoModal' inesperada de ${interaction.user.tag}. Estado pendiente: ${JSON.stringify(pendingData)}`);
-                     // *** CORRECCIÓN: Usar editReply() en lugar de followUp para responder a sumisiones de modales inesperadas ***
-                     // Aunque deferimos, si el estado es inesperado, editamos la respuesta deferida
                      try {
                          await interaction.editReply({ content: 'Esta sumisión de formulario no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar.', ephemeral: true });
                      } catch (editError) {
                           console.error('Error al enviar mensaje de error con editReply en sumisión de modal inesperada:', editError);
-                          // Como último recurso, intentar followUp
                           try {
                              await interaction.followUp({ content: 'Esta sumisión de formulario no corresponde a un proceso activo. Por favor, usa el comando /agregar-caso para empezar. (Error)', ephemeral: true });
                           } catch (fuError) {
