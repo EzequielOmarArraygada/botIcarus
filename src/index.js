@@ -14,7 +14,7 @@ import { getAndreaniTracking } from './utils/andreani.js';
 
 // --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
 // Asegúrate de importar TODAS las funciones de modales que uses
-import { buildFacturaAModal, buildCasoModal, buildCancelacionModal, buildReembolsoModal } from './interactions/modals.js';
+import { buildFacturaAModal, buildCasoModal} from './interactions/modals.js';
 import { buildTipoSolicitudSelectMenu } from './interactions/selectMenus.js';
 // import { buildMyButton } from './interactions/buttons.js'; // Si tienes botones personalizados
 
