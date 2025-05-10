@@ -107,8 +107,6 @@ setupInteractionCreate(
     buildFacturaAModal,
     buildTipoSolicitudSelectMenu,
     buildCasoModal,
-    buildCancelacionModal,
-    buildReembolsoModal,
     checkIfPedidoExists,
     getAndreaniTracking,
     findOrCreateDriveFolder,
