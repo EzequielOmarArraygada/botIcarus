@@ -64,7 +64,7 @@ client.once('ready', async () => {
     // Si necesitas verificar errores en otras hojas (Cancelaciones, Reembolsos, etc.),
     // deberás extender la función checkSheetForErrors en googleSheets.js
     // o crear funciones de verificación separadas para cada hoja y llamarlas aquí.
-    if (config.spreadsheetIdCasosBgh && config.sheetRangeCasosBghRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
+    if (config.spreadsheetIdCasos && config.sheetRangeCasosBghRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
         console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos BGH.`);
         // Llamar a la función importada y pasarle las dependencias necesarias
         checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasosBgh, config.sheetRangeCasosBghRead, config.targetChannelIdCasos, config.guildId);
