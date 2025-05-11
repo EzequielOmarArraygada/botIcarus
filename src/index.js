@@ -1,6 +1,3 @@
-// src/index.js
-// Ya no necesitamos dotenv/config aquí si usamos src/config.js
-
 // --- Importaciones de discord.js ---
 import { Client, GatewayIntentBits } from 'discord.js';
 
