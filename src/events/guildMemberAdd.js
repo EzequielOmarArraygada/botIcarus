@@ -31,7 +31,7 @@ export default (client, config) => {
             // Verificar si el canal fue encontrado y es un canal de texto donde se puede enviar mensajes
             if (targetChannel && targetChannel.isTextBased()) {
                 // Construir el mensaje de bienvenida
-                const welcomeMessage = `¡Bienvenido/a al servidor, ${member}! 🎉 Nos alegra tenerte aquí. Si tienes alguna pregunta, puedes usar el comando \`/help\` o preguntar en este canal.`;
+                const welcomeMessage = `¡Bienvenido/a al servidor, ${member}! 🎉 Nos alegra tenerte aquí. Si tienes alguna pregunta, en el canal de guia-comandos-bot vas a encontrar ayuda para lo que necesites.`;
 
                 // Enviar el mensaje al canal de destino
                 await targetChannel.send(welcomeMessage);
