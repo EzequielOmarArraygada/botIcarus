@@ -26,7 +26,7 @@ export async function getAnswerFromManual(manualText, question, geminiApiKey) {
     try {
         initializeGemini(geminiApiKey);
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
         const prompt = `
             Eres un asistente experto y preciso. Tu única fuente de conocimiento es el siguiente manual de procedimientos.
