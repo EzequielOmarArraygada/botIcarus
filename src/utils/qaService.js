@@ -47,15 +47,6 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
             --- INICIO DEL MANUAL ---
             <span class="math-inline">\{manualText\}
-
-        const prompt = `
-            Eres un asistente experto y preciso. Tu única fuente de conocimiento es el siguiente manual de procedimientos.
-            Responde la pregunta del usuario basándote EXCLUSIVAMENTE en el contenido de este manual.
-            Si la respuesta no se encuentra en el manual, responde "Lo siento, no pude encontrar la respuesta a tu pregunta en el manual."
-            No inventes información. Sé directo y cita las partes relevantes del manual si es posible.
-
-            --- INICIO DEL MANUAL ---
-            ${manualText}
             --- FIN DEL MANUAL ---
 
             Pregunta del usuario: "${question}"
