@@ -4,14 +4,14 @@ let genAI;
 
 /**
  * Inicializa la instancia de Gemini.
- * @param {string} apiKey 
+ * @param {string} ApiKey
  */
-function initializeGemini(apiKey) {
-    if (!apiKey) {
+function initializeGemini(ApiKey) {
+    if (!ApiKey) {
         throw new Error("API Key de Gemini no proporcionada.");
     }
     if (!genAI) {
-        genAI = new GoogleGenerativeAI(apiKey);
+        genAI = new GoogleGenerativeAI(ApiKey);
     }
 }
 
@@ -19,12 +19,12 @@ function initializeGemini(apiKey) {
  * Usa el modelo Gemini para responder una pregunta basada en el texto de un manual.
  * @param {string} manualText - El texto completo del manual.
  * @param {string} question - La pregunta del usuario.
- * @param {string} apiKey - La clave de API de Gemini.
+ * @param {string} ApiKey - La clave de API de Gemini.
  * @returns {Promise<string>} - La respuesta generada por la IA.
  */
 export async function getAnswerFromManual(manualText, question, apiKey) {
     try {
-        initializeGemini(apiKey);
+        initializeGemini(ApiKey);
 
         const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
