@@ -6,8 +6,10 @@ import config from './config.js'; // Importamos el objeto config
 
 // --- Importaciones de utilidades ---
 import { initializeGoogleSheets, checkSheetForErrors, checkIfPedidoExists } from './utils/googleSheets.js';
-import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive } from './utils/googleDrive.js';
+import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive } from './utils/googleDrive.js';
 import { getAndreaniTracking } from './utils/andreani.js';
+import { loadAndCacheManual, getManualText } from './utils/manualProcessor.js';
+import { getAnswerFromManual } from './utils/qaService.js';
 
 // --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
 // Asegúrate de importar TODAS las funciones de modales que uses
@@ -56,6 +58,14 @@ try {
 // --- Eventos del Bot de Discord ---
 client.once('ready', async () => {
     console.log(`Bot logeado como ${client.user.tag}!`);
+
+    // --- Cargar el manual en memoria ---
+    if (config.manualDriveFileId && driveInstance) {
+        await loadAndCacheManual(driveInstance, config.manualDriveFileId);
+    } else {
+        console.warn("No se cargará el manual porque falta MANUAL_DRIVE_FILE_ID o la instancia de Drive no está disponible.");
+    }
+
     console.log(`Conectado a Discord.`);
     console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
 
@@ -107,7 +117,9 @@ setupInteractionCreate(
     checkIfPedidoExists,
     getAndreaniTracking,
     findOrCreateDriveFolder,
-    uploadFileToDrive
+    uploadFileToDrive,
+    getManualText,
+    getAnswerFromManual
 );
 
 // --- Configurar Listener para Nuevos Miembros ---

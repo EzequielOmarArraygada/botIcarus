@@ -23,6 +23,9 @@ const config = {
     sheetsToSearch: process.env.GOOGLE_SHEET_SEARCH_SHEETS ? process.env.GOOGLE_SHEET_SEARCH_SHEETS.split(',').map(s => s.trim()) : [],
     parentDriveFolderId: process.env.PARENT_DRIVE_FOLDER_ID,
 
+    geminiApiKey: process.env.GEMINI_API_KEY, //
+    manualDriveFileId: process.env.MANUAL_DRIVE_FILE_ID,
+
     errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000, // Default: 5 minutos
 };
 
@@ -37,6 +40,13 @@ if (!config.guildId) {
 if (!config.googleCredentialsJson) {
     console.error("Error CRÍTICO: La variable de entorno GOOGLE_CREDENTIALS_JSON no está configurada.");
     process.exit(1);
+}
+
+if (!config.geminiApiKey) {
+    console.warn("Advertencia: GEMINI_API_KEY no configurada. El comando del manual no funcionará.");
+}
+if (!config.manualDriveFileId) {
+    console.warn("Advertencia: MANUAL_DRIVE_FILE_ID no configurado. El comando del manual no funcionará.");
 }
 
 // Validar intervalo de verificación de errores

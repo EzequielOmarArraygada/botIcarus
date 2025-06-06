@@ -12,9 +12,11 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "discord.js": "^14.19.3",
     "dotenv": "^16.5.0",
     "googleapis": "^148.0.0",
+    "mammoth": "^1.9.1",
     "node-fetch": "^3.3.2"
   }
 }

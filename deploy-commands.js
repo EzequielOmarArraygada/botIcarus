@@ -58,6 +58,16 @@ const commands = [
                 required: true,
             },
         ],
+        name: 'manual',
+        description: 'Responde una pregunta basada en el manual de procedimientos.',
+        options: [
+            {
+                name: 'pregunta',
+                description: 'La pregunta que quieres hacerle al manual.',
+                type: ApplicationCommandOptionType.String,
+                required: true,
+            },
+        ],
     }
 	// Si tuvieras más comandos, los añadirías aquí en este array.
 ];

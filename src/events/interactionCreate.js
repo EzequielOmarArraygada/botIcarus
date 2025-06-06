@@ -22,6 +22,8 @@ import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive
  * @param {function} getAndreaniTracking - Función para obtener tracking de Andreani.
  * @param {function} findOrCreateDriveFolder - Función de utilidad de Drive. // Pasar la función
  * @param {function} uploadFileToDrive - Función de utilidad de Drive. // Pasar la función
+ * @param {function} getManualText - Función para obtener el texto del manual.
+ * @param {function} getAnswerFromManual - Función para obtener respuestas del manual.
  */
 export default (
     client,
@@ -35,7 +37,9 @@ export default (
     checkIfPedidoExists,
     getAndreaniTracking,
     findOrCreateDriveFolder,
-    uploadFileToDrive
+    uploadFileToDrive,
+    getManualText, // <--- CAMBIO 1: Agregado aquí
+    getAnswerFromManual // <--- CAMBIO 1: Agregado aquí
 ) => {
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
@@ -354,6 +358,35 @@ export default (
 
                      await interaction.editReply({ content: errorMessage, ephemeral: false });
                  }
+            } else if (interaction.commandName === 'manual') { // <--- CAMBIO 2: Bloque de código agregado aquí
+                console.log(`Comando /manual recibido por ${interaction.user.tag}.`);
+
+                await interaction.deferReply(); // Responder después, ya que la IA puede tardar
+
+                const pregunta = interaction.options.getString('pregunta');
+                console.log(`Pregunta del usuario: "${pregunta}"`);
+
+                const manualText = getManualText();
+                if (!manualText) {
+                    await interaction.editReply('❌ Error: El manual no está cargado. Por favor, avisa a un administrador.');
+                    return;
+                }
+
+                try {
+                    const respuesta = await getAnswerFromManual(manualText, pregunta, config.geminiApiKey);
+                    
+                    const respuestaFormateada = `
+                        ❓ **Tu pregunta:**\n> ${pregunta}\n
+                        📖 **Respuesta del manual:**\n${respuesta}
+                    `;
+                    
+                    await interaction.editReply(respuestaFormateada);
+                    console.log("Respuesta del manual enviada correctamente.");
+
+                } catch (error) {
+                    console.error("Error al procesar el comando /manual:", error);
+                    await interaction.editReply(`❌ Hubo un error al procesar tu pregunta. Inténtalo de nuevo más tarde. (Detalles: ${error.message})`);
+                }
             }
         }
 

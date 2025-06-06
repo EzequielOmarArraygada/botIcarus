@@ -140,3 +140,29 @@ export async function uploadFileToDrive(driveInstance, folderId, attachment) {
          throw error; // Relanzar el error para manejarlo en el try/catch principal de la interacción
      }
 }
+
+/**
+ * Descarga el contenido de un archivo desde Google Drive.
+ * @param {object} driveInstance - Instancia de la API de Google Drive.
+ * @param {string} fileId - ID del archivo a descargar.
+ * @returns {Promise<Buffer>} - Promesa que resuelve con el contenido del archivo como un Buffer.
+ */
+export async function downloadFileFromDrive(driveInstance, fileId) {
+    if (!driveInstance || !fileId) {
+        throw new Error("downloadFileFromDrive: Parámetros incompletos.");
+    }
+
+    try {
+        console.log(`Intentando descargar archivo con ID: ${fileId}`);
+        const response = await driveInstance.files.get(
+            { fileId: fileId, alt: 'media' },
+            { responseType: 'arraybuffer' } // Muy importante para obtener el contenido binario
+        );
+
+        // El contenido está en response.data
+        return Buffer.from(response.data);
+    } catch (error) {
+        console.error(`Error al descargar el archivo ${fileId} de Drive:`, error);
+        throw error;
+    }
+}
