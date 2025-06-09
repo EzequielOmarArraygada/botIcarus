@@ -26,6 +26,8 @@ const config = {
     geminiApiKey: process.env.GEMINI_API_KEY, //
     manualDriveFileId: process.env.MANUAL_DRIVE_FILE_ID,
 
+    googleDriveModelsSharedDriveId: process.env.GOOGLE_DRIVE_MODELS_SHARED_DRIVE_ID,
+
     errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000, // Default: 5 minutos
 };
 

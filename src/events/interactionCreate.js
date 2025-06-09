@@ -62,10 +62,9 @@ console.log(`Comando /buscar-modelo recibido por ${interaction.user.tag}. Modelo
                 try {
     const parentFolderForModelSearch = null; // Si buscas en Mi Unidad
     // Si la carpeta de modelos está en una UNIDAD COMPARTIDA, necesitas su ID.
-    // Podrías añadir este ID a tu config.js como `config.googleDriveModelsSharedDriveId`.
-    const sharedDriveIdForModels = null; // O config.googleDriveModelsSharedDriveId;
-
-    const foundFolders = await searchFoldersByName(driveInstance, modelo, parentFolderForModelSearch, sharedDriveIdForModels);
+    
+    const sharedDriveIdForModels = config.googleDriveModelsSharedDriveId; // Obtener el ID de la unidad compartida
+    const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, sharedDriveIdForModels);
 
     if (foundFolders.length > 0) {
 
