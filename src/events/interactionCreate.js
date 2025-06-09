@@ -4,7 +4,8 @@ import { buildFacturaAModal, buildCasoModal } from '../interactions/modals.js';
 import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js'; // Asegúrate de importar buildTipoSolicitudSelectMenu
 import { checkIfPedidoExists } from '../utils/googleSheets.js';
 import { getAndreaniTracking } from '../utils/andreani.js';
-import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
+import { findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive, searchFoldersByName } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
+
 
 
 /**
@@ -39,13 +40,45 @@ export default (
     findOrCreateDriveFolder,
     uploadFileToDrive,
     getManualText, // 
-    getAnswerFromManual 
+    getAnswerFromManual,
+    searchFoldersByName
 ) => {
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
 
+        
+
         // --- Manejar Comandos de Barra (Slash Commands) ---
         if (interaction.isChatInputCommand()) {
+
+            // Manejador para el nuevo comando /buscar-modelo
+            if (commandName === 'buscar-modelo') {
+                // Deferir la respuesta porque la búsqueda puede tardar un poco
+                await interaction.deferReply({ ephemeral: true });
+
+                const modelo = interaction.options.getString('modelo');
+                console.log(`Comando /buscar-modelo recibido por <span class="math-inline">\{interaction\.user\.tag\}\. Modelo a buscar\: "</span>{modelo}"`);
+
+                try {
+                    const foundFolders = await searchFoldersByName(driveInstance, modelo);
+
+                    if (foundFolders.length > 0) {
+                        let replyContent = `Se encontraron las siguientes carpetas para el modelo "${modelo}":\n\n`;
+                        foundFolders.forEach(folder => {
+                            replyContent += `- [<span class="math-inline">\{folder\.name\}\]\(</span>{folder.link})\n`;
+                        });
+                        // Si la respuesta es muy larga para un solo mensaje, Discord la truncará.
+                        // Puedes añadir lógica para dividirla en varios mensajes si es necesario.
+                        await interaction.editReply({ content: replyContent, ephemeral: true });
+                    } else {
+                        await interaction.editReply({ content: `Lo siento, no se encontraron carpetas que contengan "${modelo}" en su nombre.`, ephemeral: true });
+                    }
+                } catch (error) {
+                    console.error(`Error al procesar el comando /buscar-modelo para "${modelo}":`, error);
+                    await interaction.editReply({ content: 'Hubo un error al buscar las carpetas en Drive. Por favor, inténtalo de nuevo más tarde.', ephemeral: true });
+                }
+            }
+        
             // Verifica si es el comando "/factura-a"
             if (interaction.commandName === 'factura-a') {
                  console.log(`Comando /factura-a recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);

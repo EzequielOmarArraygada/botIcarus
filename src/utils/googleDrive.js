@@ -164,3 +164,44 @@ export async function downloadFileFromDrive(driveInstance, fileId) {
         throw error;
     }
 }
+
+
+/**
+ * Busca carpetas en Google Drive cuyos nombres contengan una cadena de texto específica.
+ * Esta búsqueda se realiza en todo el Drive accesible por la cuenta de servicio.
+ * @param {object} driveInstance - Instancia de la API de Google Drive.
+ * @param {string} folderNameQuery - La cadena de texto (modelo) a buscar en los nombres de las carpetas.
+ * @returns {Promise<Array<{name: string, link: string}>>} - Promesa que resuelve con una lista de objetos {nombre, link} de las carpetas encontradas.
+ */
+export async function searchFoldersByName(driveInstance, folderNameQuery) {
+    if (!driveInstance || !folderNameQuery) {
+        throw new Error("searchFoldersByName: Parámetros incompletos (driveInstance o folderNameQuery).");
+    }
+
+    try {
+        // Consulta para buscar carpetas (mimeType) cuyo nombre contenga la cadena (name contains)
+        const query = `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}'`;
+        const folders = [];
+        let pageToken = null; // Para manejar resultados paginados (más de 100 carpetas)
+
+        do {
+            const res = await driveInstance.files.list({
+                q: query,
+                fields: 'nextPageToken, files(id, name, webViewLink)', // Solo necesitamos el ID, nombre y link para la respuesta
+                spaces: 'drive', // Busca en el Drive del usuario
+                pageToken: pageToken
+            });
+            folders.push(...res.data.files); // Añade los resultados a la lista
+            pageToken = res.data.nextPageToken; // Obtiene el token para la siguiente página
+        } while (pageToken); // Continúa hasta que no haya más páginas
+
+        // Mapea los resultados para devolver solo el nombre y el link, que es lo que nos interesa
+        return folders.map(folder => ({
+            name: folder.name,
+            link: folder.webViewLink
+        }));
+    } catch (error) {
+        console.error(`Error al buscar carpetas que contienen "${folderNameQuery}" en Google Drive:`, error);
+        throw error; // Relanza el error para que sea manejado en la interacción
+    }
+}

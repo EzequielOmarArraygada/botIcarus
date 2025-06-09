@@ -67,6 +67,16 @@ const commands = [
                 required: true,
             },
         ],
+        name: 'buscar-modelo',
+        description: 'Busca carpetas de productos en Google Drive por el nombre del modelo.',
+        options: [
+            {
+                name: 'modelo',
+                description: 'El modelo del producto a buscar (ej. "XYZ-123", "BGH4000").',
+                type: ApplicationCommandOptionType.String, // ¡Asegúrate de que este 'type' esté presente y correcto!
+                required: true,
+            },
+        ],
     }
 ];
 
