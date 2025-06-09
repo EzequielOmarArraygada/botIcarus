@@ -1,4 +1,3 @@
-// Carga variables de entorno (forma para Módulos ES)
 import 'dotenv/config';
 
 // Importaciones usando sintaxis de Módulos ES
@@ -69,7 +68,6 @@ const commands = [
             },
         ],
     }
-	// Si tuvieras más comandos, los añadirías aquí en este array.
 ];
 
 // --- Proceso de Despliegue ---
@@ -95,12 +93,9 @@ const rest = new REST({ version: '10' }).setToken(token); // '10' es la versión
         data.forEach(command => {
             console.log(`Nombre: ${command.name}, ID: ${command.id}`);
         });
-        // NOTA: Necesitarás actualizar tus variables de entorno en Railway
-        // con los IDs de 'factura-a' y 'registrar-caso' si cambiaron.
-
 
 	} catch (error) {
 		// Atrapa cualquier error durante el despliegue
 		console.error('Error al desplegar comandos:', error);
 	}
-})(); // Ejecuta la función inmediatamente
+})(); 
