@@ -53,36 +53,36 @@ export default (
 
             // Manejador para el nuevo comando /buscar-modelo
             if (interaction.commandName === 'buscar-modelo') {
-                // Deferir la respuesta porque la búsqueda puede tardar un poco
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply({ ephemeral: true }); // Para asegurar que el bot responde a tiempo
 
-                const modelo = interaction.options.getString('modelo');
-console.log(`Comando /buscar-modelo recibido por ${interaction.user.tag}. Modelo a buscar: "${modelo}"`);
+                // *** ESTA ES LA LÍNEA CRÍTICA A AÑADIR O MODIFICAR ***
+                // Asegúrate de que 'modelo' es el nombre de tu opción en el comando
+                const modelToSearch = interaction.options.getString('modelo');
+
+                if (!modelToSearch) {
+                    await interaction.editReply('Por favor, proporciona el modelo a buscar. Ejemplo: `/buscar-modelo B330DSS9`');
+                    return;
+                }
+
+                // Obtener el ID de la unidad compartida desde la configuración
+                const sharedDriveIdForModels = config.googleDriveModelsSharedDriveId;
 
                 try {
-    const parentFolderForModelSearch = null; // Si buscas en Mi Unidad
-    // Si la carpeta de modelos está en una UNIDAD COMPARTIDA, necesitas su ID.
-    
-    const sharedDriveIdForModels = config.googleDriveModelsSharedDriveId; // Obtener el ID de la unidad compartida
-    const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, sharedDriveIdForModels);
+                    // Ahora modelToSearch está definido y se pasa correctamente
+                    const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, sharedDriveIdForModels);
 
-    if (foundFolders.length > 0) {
-
-                        let replyContent = `Se encontraron las siguientes carpetas para el modelo "${modelo}":\n\n`;
-                        foundFolders.forEach(folder => {
-                            replyContent += `- [<span class="math-inline">\{folder\.name\}\]\(</span>{folder.link})\n`;
-                        });
-                        // Si la respuesta es muy larga para un solo mensaje, Discord la truncará.
-                        // Puedes añadir lógica para dividirla en varios mensajes si es necesario.
-                        await interaction.editReply({ content: replyContent, ephemeral: true });
+                    if (foundFolders && foundFolders.length > 0) {
+                        const folderList = foundFolders.map(folder => `[${folder.name}](${folder.link})`).join('\n');
+                        await interaction.editReply(`Se encontraron las siguientes carpetas para "${modelToSearch}":\n${folderList}`);
                     } else {
-                        await interaction.editReply({ content: `Lo siento, no se encontraron carpetas que contengan "${modelo}" en su nombre.`, ephemeral: true });
+                        await interaction.editReply(`Lo siento, no se encontraron carpetas que contengan "${modelToSearch}" en su nombre.`);
                     }
                 } catch (error) {
-                    console.error(`Error al procesar el comando /buscar-modelo para "${modelo}":`, error);
-                    await interaction.editReply({ content: 'Hubo un error al buscar las carpetas en Drive. Por favor, inténtalo de nuevo más tarde.', ephemeral: true });
+                    console.error(`Error al procesar el comando /buscar-modelo para "${modelToSearch}":`, error);
+                    await interaction.editReply('Hubo un error al buscar las carpetas. Por favor, inténtalo de nuevo más tarde.');
                 }
             }
+
         
             // Verifica si es el comando "/factura-a"
             if (interaction.commandName === 'factura-a') {
