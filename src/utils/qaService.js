@@ -3,9 +3,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 let genAI;
 
 /**
- * Inicializa la instancia de Gemini.
  * @param {string} geminiApiKey
  */
+
 function initializeGemini(geminiApiKey) {
     if (!geminiApiKey) {
         throw new Error("API Key de Gemini no proporcionada.");
@@ -16,7 +16,6 @@ function initializeGemini(geminiApiKey) {
 }
 
 /**
- * Usa el modelo Gemini para responder una pregunta basada en el texto de un manual.
  * @param {string} manualText - El texto completo del manual.
  * @param {string} question - La pregunta del usuario.
  * @param {string} geminiApiKey - La clave de API de Gemini.
@@ -30,14 +29,6 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
      console.log("--- DEBUG QA SERVICE ---");
         console.log(`Pregunta del usuario: "${question}"`);
-        console.log(`Longitud del manual recibido: ${manualText ? manualText.length : 'null/undefined'}`);
-        if (manualText && manualText.length > 0) {
-            console.log(`Primeros 200 caracteres del manual:\n${manualText.substring(0, 200)}...`);
-        } else {
-            console.warn("ADVERTENCIA: manualText está vacío o es nulo. La IA no podrá responder.");
-        }
-        console.log("------------------------");
-        // ------------------------------------
 
         const prompt = `
             Eres un asistente experto y preciso, especializado en buscar información en el manual de procedimientos proporcionado.
