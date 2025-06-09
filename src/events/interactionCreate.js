@@ -57,12 +57,18 @@ export default (
                 await interaction.deferReply({ ephemeral: true });
 
                 const modelo = interaction.options.getString('modelo');
-                console.log(`Comando /buscar-modelo recibido por <span class="math-inline">\{interaction\.user\.tag\}\. Modelo a buscar\: "</span>{modelo}"`);
+console.log(`Comando /buscar-modelo recibido por ${interaction.user.tag}. Modelo a buscar: "${modelo}"`);
 
                 try {
-                    const foundFolders = await searchFoldersByName(driveInstance, modelo);
+    const parentFolderForModelSearch = null; // Si buscas en Mi Unidad
+    // Si la carpeta de modelos está en una UNIDAD COMPARTIDA, necesitas su ID.
+    // Podrías añadir este ID a tu config.js como `config.googleDriveModelsSharedDriveId`.
+    const sharedDriveIdForModels = null; // O config.googleDriveModelsSharedDriveId;
 
-                    if (foundFolders.length > 0) {
+    const foundFolders = await searchFoldersByName(driveInstance, modelo, parentFolderForModelSearch, sharedDriveIdForModels);
+
+    if (foundFolders.length > 0) {
+
                         let replyContent = `Se encontraron las siguientes carpetas para el modelo "${modelo}":\n\n`;
                         foundFolders.forEach(folder => {
                             replyContent += `- [<span class="math-inline">\{folder\.name\}\]\(</span>{folder.link})\n`;
