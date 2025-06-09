@@ -71,9 +71,6 @@ client.once('ready', async () => {
 
     // --- Iniciar la verificación periódica de errores en la hoja ---
     // NOTA: Actualmente, la verificación de errores solo está implementada para la hoja principal de Casos (Solicitud BGH).
-    // Si necesitas verificar errores en otras hojas (Cancelaciones, Reembolsos, etc.),
-    // deberás extender la función checkSheetForErrors en googleSheets.js
-    // o crear funciones de verificación separadas para cada hoja y llamarlas aquí.
     if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
         console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos BGH.`);
         // Llamar a la función importada y pasarle las dependencias necesarias
@@ -82,16 +79,6 @@ client.once('ready', async () => {
     } else {
         console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
     }
-
-    // Si necesitas verificar errores en Cancelaciones, podrías añadir algo como:
-    // if (config.spreadsheetIdCancelaciones && config.sheetRangeCancelacionesRead && config.targetChannelIdCasos && config.guildId) {
-    //     console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Cancelaciones.`);
-    //     // Deberías tener una función checkSheetForErrorsCancelaciones o modificar la existente
-    //     // checkSheetForErrorsCancelaciones(client, sheetsInstance, config.spreadsheetIdCancelaciones, config.sheetRangeCancelacionesRead, config.targetChannelIdCasos, config.guildId);
-    //     // setInterval(() => checkSheetForErrorsCancelaciones(client, sheetsInstance, config.spreadsheetIdCancelaciones, config.sheetRangeCancelacionesRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
-    // }
-
-
 });
 
 // --- Configurar Listeners de Eventos ---

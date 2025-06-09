@@ -1,8 +1,7 @@
-// test_gemini_connection.js
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import 'dotenv/config'; // Para cargar tus variables de entorno
+import 'dotenv/config'; 
 
-const API_KEY = process.env.GEMINI_API_KEY; // Asegúrate de que esta variable esté en tu archivo .env local
+const API_KEY = process.env.GEMINI_API_KEY; 
 const MODEL_NAME = "gemini-1.5-flash-latest";
 
 async function testGeminiConnection() {

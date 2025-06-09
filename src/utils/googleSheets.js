@@ -1,6 +1,5 @@
 import { google } from 'googleapis';
 
-// Declaramos las instancias aquí, se inicializarán desde index.js
 let auth;
 let sheets;
 
@@ -263,6 +262,5 @@ Por favor, revisa la hoja para más detalles.
 
     } catch (error) {
         console.error('Error al leer la hoja de Google Sheets para verificar errores:', error);
-        // Opcional: Notificar a un canal de administración o loggear el error de forma más persistente
     }
 }

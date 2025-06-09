@@ -28,8 +28,6 @@ export function initializeGoogleDrive(credentialsJson) {
 
 
 /**
- * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre.
- * Si no existe, la crea.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {string} parentId - ID de la carpeta padre donde buscar/crear. Si es null/undefined, busca/crea en la raíz del Drive de la cuenta de servicio.
  * @param {string} folderName - Nombre de la carpeta a buscar/crear.

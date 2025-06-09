@@ -38,8 +38,8 @@ export default (
     getAndreaniTracking,
     findOrCreateDriveFolder,
     uploadFileToDrive,
-    getManualText, // <--- CAMBIO 1: Agregado aquí
-    getAnswerFromManual // <--- CAMBIO 1: Agregado aquí
+    getManualText, // 
+    getAnswerFromManual 
 ) => {
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
@@ -56,7 +56,7 @@ export default (
                       return;
                  }
 
-                // !!! MOSTRAR EL MODAL DE Factura A !!!
+                // !!! Modal Factura A !!!
                 try {
                     const modal = buildFacturaAModal(); // Usamos la función importada
                     await interaction.showModal(modal);

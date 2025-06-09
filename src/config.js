@@ -19,7 +19,7 @@ const config = {
     spreadsheetIdCasos: process.env.GOOGLE_SHEET_ID_CASOS,
     sheetRangeCasos: process.env.GOOGLE_SHEET_RANGE_CASOS,
     sheetRangeCasosRead: process.env.GOOGLE_SHEET_RANGE_CASOS_READ,
-    spreadsheetIdBuscarCaso: process.env.GOOGLE_SHEET_SEARCH_SHEET_ID || process.env.GOOGLE_SHEET_ID_CASOS, // Usar el de casos como fallback
+    spreadsheetIdBuscarCaso: process.env.GOOGLE_SHEET_SEARCH_SHEET_ID || process.env.GOOGLE_SHEET_ID_CASOS, 
     sheetsToSearch: process.env.GOOGLE_SHEET_SEARCH_SHEETS ? process.env.GOOGLE_SHEET_SEARCH_SHEETS.split(',').map(s => s.trim()) : [],
     parentDriveFolderId: process.env.PARENT_DRIVE_FOLDER_ID,
 
