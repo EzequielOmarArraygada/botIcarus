@@ -52,7 +52,7 @@ export default (
         if (interaction.isChatInputCommand()) {
 
             // Manejador para el nuevo comando /buscar-modelo
-            if (commandName === 'buscar-modelo') {
+            if (interaction.commandName === 'buscar-modelo') {
                 // Deferir la respuesta porque la búsqueda puede tardar un poco
                 await interaction.deferReply({ ephemeral: true });
 
