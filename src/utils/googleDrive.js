@@ -14,15 +14,14 @@ export function initializeGoogleDrive(credentialsJson) {
         const credentials = JSON.parse(credentialsJson);
         auth = new google.auth.GoogleAuth({
             credentials,
-            scopes: ['https://www.googleapis.com/auth/drive'] // Solo scope de Drive
+            scopes: ['https://www.googleapis.com/auth/drive']
         });
         drive = google.drive({ version: 'v3', auth });
         console.log("Instancia de Google Drive inicializada.");
-        // Retornamos la instancia para que pueda ser usada en otros módulos
         return drive;
     } catch (error) {
         console.error("Error al inicializar Google Drive:", error);
-        throw error; // Relanzar para manejar en index.js
+        throw error;
     }
 }
 
@@ -162,12 +161,14 @@ export async function downloadFileFromDrive(driveInstance, fileId) {
 
 /**
  * Busca carpetas en Google Drive por nombre que contengan la cadena dada.
+ * Puede buscar en "Mi Unidad" o en "Unidades Compartidas".
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {string} folderNameQuery - La cadena de texto a buscar dentro del nombre de la carpeta.
- * @param {string} [parentId=null] - (Opcional) El ID de la carpeta padre para limitar la búsqueda.
+ * @param {string} [parentId=null] - (Opcional) El ID de la carpeta padre para limitar la búsqueda (en Mi Unidad).
+ * @param {string} [teamDriveId=null] - (Opcional) El ID de la Unidad Compartida para buscar allí.
  * @returns {Promise<Array<object>>} - Promesa que resuelve con una lista de objetos { name, link } de las carpetas encontradas.
  */
-export async function searchFoldersByName(driveInstance, folderNameQuery, parentId = null) {
+export async function searchFoldersByName(driveInstance, folderNameQuery, parentId = null, teamDriveId = null) {
     if (!driveInstance || !folderNameQuery) {
         throw new Error("searchFoldersByName: Parámetros incompletos (driveInstance o folderNameQuery).");
     }
@@ -178,19 +179,32 @@ export async function searchFoldersByName(driveInstance, folderNameQuery, parent
             query += ` and '${parentId}' in parents`;
         }
 
-        console.log(`DEBUG: Búsqueda de Drive Query: "${query}"`); // <-- ¡AÑADE ESTA LÍNEA!
+        console.log(`DEBUG: Búsqueda de Drive Query: "${query}"`);
         console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
 
         const folders = [];
         let pageToken = null;
 
         do {
-            const res = await driveInstance.files.list({
+            const listParams = {
                 q: query,
                 fields: 'nextPageToken, files(id, name, webViewLink)',
                 spaces: 'drive',
-                pageToken: pageToken
-            });
+                pageToken: pageToken,
+                // --- ¡AÑADE ESTAS DOS LÍNEAS PARA BUSCAR EN UNIDADES COMPARTIDAS! ---
+                corpora: teamDriveId ? 'drive' : 'user', // 'drive' para unidades compartidas, 'user' para Mi Unidad
+                includeItemsFromAllDrives: teamDriveId ? true : false, // Incluir elementos de todas las unidades
+                supportsAllDrives: true, // Importante para usar con corporar=drive
+                // -------------------------------------------------------------------
+            };
+
+            // Si se especifica un teamDriveId, se debe añadir al listParams como 'driveId'
+            if (teamDriveId) {
+                listParams.driveId = teamDriveId;
+            }
+
+
+            const res = await driveInstance.files.list(listParams);
             folders.push(...res.data.files);
             pageToken = res.data.nextPageToken;
         } while (pageToken);
