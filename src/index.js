@@ -6,7 +6,7 @@ import config from './config.js'; // Importamos el objeto config
 
 // --- Importaciones de utilidades ---
 import { initializeGoogleSheets, checkSheetForErrors, checkIfPedidoExists } from './utils/googleSheets.js';
-import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive, searchFoldersByName  } from './utils/googleDrive.js';
+import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive } from './utils/googleDrive.js';
 import { getAndreaniTracking } from './utils/andreani.js';
 import { loadAndCacheManual, getManualText } from './utils/manualProcessor.js';
 import { getAnswerFromManual } from './utils/qaService.js';
@@ -106,8 +106,7 @@ setupInteractionCreate(
     findOrCreateDriveFolder,
     uploadFileToDrive,
     getManualText,
-    getAnswerFromManual,
-    searchFoldersByName, 
+    getAnswerFromManual
 );
 
 // --- Configurar Listener para Nuevos Miembros ---

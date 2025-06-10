@@ -4,8 +4,7 @@ import { buildFacturaAModal, buildCasoModal } from '../interactions/modals.js';
 import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js'; // Asegúrate de importar buildTipoSolicitudSelectMenu
 import { checkIfPedidoExists } from '../utils/googleSheets.js';
 import { getAndreaniTracking } from '../utils/andreani.js';
-import { findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive, searchFoldersByName } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
-
+import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
 
 
 /**
@@ -25,8 +24,6 @@ import { findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive, sear
  * @param {function} uploadFileToDrive - Función de utilidad de Drive. // Pasar la función
  * @param {function} getManualText - Función para obtener el texto del manual.
  * @param {function} getAnswerFromManual - Función para obtener respuestas del manual.
- * @param {function} searchFoldersByName - Función para buscar carpetas por nombre en Drive. // Asegurarse que se pasa
-
  */
 export default (
     client,
@@ -42,12 +39,13 @@ export default (
     findOrCreateDriveFolder,
     uploadFileToDrive,
     getManualText, // 
-    getAnswerFromManual,
-    searchFoldersByName
+    getAnswerFromManual 
 ) => {
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
-       
+
+        // --- Manejar Comandos de Barra (Slash Commands) ---
+        if (interaction.isChatInputCommand()) {
             // Verifica si es el comando "/factura-a"
             if (interaction.commandName === 'factura-a') {
                  console.log(`Comando /factura-a recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
@@ -389,34 +387,8 @@ export default (
                     console.error("Error al procesar el comando /manual:", error);
                     await interaction.editReply(`❌ Hubo un error al procesar tu pregunta. Inténtalo de nuevo más tarde. (Detalles: ${error.message})`);
                 }
-            } else if (interaction.commandName === 'buscar-modelo') {
-            await interaction.deferReply({ ephemeral: true });
-            const modelToSearch = interaction.options.getString('modelo');
-            const modelRootFolderId = config.googleDriveModelsSharedDriveId; 
-
-            if (!modelToSearch) {
-                return await interaction.editReply('Por favor, proporciona el modelo a buscar.');
             }
-
-            console.log(`DEBUG: Recibido comando /buscar-modelo para: "${modelToSearch}"`);
-            console.log(`DEBUG: ID de raíz para búsqueda de modelos: "${searchRootIdForModels}"`);
-
-            try {
-                const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, modelRootFolderId);
-
-                if (foundFolders.length > 0) {
-                    const folderList = foundFolders.map(folder => `- [${folder.name}](${folder.link})`).join('\n');
-                    await interaction.editReply({
-                        content: `Se encontraron ${foundFolders.length} carpetas para "${modelToSearch}":\n${folderList}`,
-                        ephemeral: true
-                    });
-                } else {
-                    await interaction.editReply({ content: `No se encontraron carpetas para "${modelToSearch}".`, ephemeral: true });
-                }
-            } catch (error) {
-                console.error(`Error al buscar modelo "${modelToSearch}" en Google Drive:`, error);
-                await interaction.editReply({ content: 'Ocurrió un error al buscar el modelo en Google Drive. Por favor, inténtalo de nuevo más tarde.', ephemeral: true });
-            }}
+        }
 
         // --- Manejar Interacciones de Select Menu ---
         if (interaction.isStringSelectMenu()) {
