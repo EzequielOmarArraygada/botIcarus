@@ -82,55 +82,55 @@ export async function findOrCreateDriveFolder(driveInstance, parentId, folderNam
 
 
 /**
- * Sube un archivo (adjunto de Discord) a Google Drive.
+ * Busca carpetas en Google Drive por nombre.
+ * Puede buscar en Mi Unidad, Unidades Compartidas o dentro de una carpeta específica.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
- * @param {string} folderId - ID de la carpeta donde subir el archivo.
- * @param {object} attachment - Objeto de adjunto de Discord (contiene url, name, etc.).
- * @returns {Promise<object>} - Promesa que resuelve con los metadatos del archivo subido.
+ * @param {string} folderNameQuery - Nombre de la carpeta a buscar.
+ * @param {string|null} searchRootId - Opcional. ID de la Unidad Compartida O el ID de una carpeta padre donde buscar.
+ * Si es null, busca en "Mi Unidad" y "Compartidos conmigo".
+ * @returns {Promise<Array<{name: string, link: string}>>} - Promesa que resuelve con una lista de carpetas encontradas.
  */
-export async function uploadFileToDrive(driveInstance, folderId, attachment) {
-    if (!driveInstance || !folderId || !attachment || !attachment.url || !attachment.name) {
-        throw new Error("uploadFileToDrive: Parámetros de adjunto incompletos.");
+export async function searchFoldersByName(driveInstance, folderNameQuery, searchRootId = null) {
+    console.log(`DEBUG: Búsqueda de Drive Query para "${folderNameQuery}" ${searchRootId ? `con ID raíz: ${searchRootId}` : ''}`);
+    console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
+
+    const folders = [];
+    let pageToken = null;
+
+    let query = `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false`;
+    let listParams = {
+        fields: 'nextPageToken, files(id, name, webViewLink)',
+        spaces: 'drive',
+        pageToken: pageToken,
+        supportsAllDrives: true, // Esto es bueno mantenerlo
+    };
+
+    if (searchRootId) {
+        // Asumimos que si se proporciona un searchRootId, es una carpeta normal que queremos buscar dentro.
+        // Esto NO es para Unidades Compartidas (Shared Drives).
+        query += ` and '${searchRootId}' in parents`;
+        listParams.corpora = 'user'; // Busca en Mi Unidad (incluyendo las carpetas compartidas con el usuario)
+        listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos compartidos
+        // IMPORTANTE: NO uses listParams.driveId ni corpora: 'drive' aquí.
+    } else {
+        // Si no se proporciona un ID raíz, busca en "Mi Unidad" y "Compartidos conmigo" por defecto.
+        listParams.corpora = 'user';
+        listParams.includeItemsFromAllDrives = true; // Incluir elementos compartidos accesibles por la cuenta de servicio
     }
 
-    try {
-        console.log(`Descargando adjunto para subir: ${attachment.name}`);
-        // Descargar el archivo de Discord
-        const response = await fetch(attachment.url);
-        if (!response.ok) {
-            throw new Error(`Failed to download attachment: ${response.statusText}`);
-        }
-        const fileBuffer = await response.buffer(); // Obtener el contenido binario del archivo
+    listParams.q = query; // Asigna la query construida
 
-        // Subir el archivo a Google Drive
-        console.log(`Subiendo archivo "${attachment.name}" a la carpeta ID: ${folderId}`);
-        const uploadedFile = await driveInstance.files.create({
-            requestBody: {
-                name: attachment.name,
-                parents: [folderId], // Asocia el archivo a la carpeta creada
-            },
-            media: {
-                mimeType: attachment.contentType || 'application/octet-stream', // Usa el tipo MIME del adjunto o un genérico
-                body: Buffer.from(fileBuffer), // Envía el buffer del archivo
-            },
-            fields: 'id, name, webViewLink, alternateLink', // Campos que queremos de vuelta (enlace directo y nombre)
-            // Usamos 'fields' para optimizar la respuesta
-            // Puedes añadir 'uploadType: 'multipart'' si encuentras problemas con archivos grandes,
-            // pero fetch() y Buffer.from() generalmente manejan bien el flujo.
-            // En Drive API v3, no es necesario 'uploadType: 'resumable'' a menos que sea un archivo muy grande
-            // y quieras reanudar subidas. Para adjuntos de Discord, generalmente 'multipart' es suficiente.
-            supportsAllDrives: true, // Importante si trabajas con unidades compartidas
-            // duplicate: false, // Drive automáticamente maneja nombres duplicados añadiendo un número
-            // En este caso, si ya existe un archivo con el mismo nombre, Drive crea uno nuevo
-        });
+    do {
+        const res = await driveInstance.files.list(listParams);
+        folders.push(...res.data.files);
+        pageToken = res.data.nextPageToken;
+        listParams.pageToken = pageToken; // Actualiza pageToken para la siguiente iteración
+    } while (pageToken);
 
-        console.log(`Archivo "${uploadedFile.data.name}" subido con éxito. ID de Drive: ${uploadedFile.data.id}`);
-        return uploadedFile.data; // Retornar ID y nombre del archivo subido
-
-    } catch (error) {
-        console.error(`Error al descargar o subir el archivo ${attachment.name}:`, error);
-        throw error; // Relanzar el error para manejarlo en el try/catch principal de la interacción
-    }
+    return folders.map(folder => ({
+        name: folder.name,
+        link: folder.webViewLink
+    }));
 }
 
 /**
