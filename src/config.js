@@ -26,7 +26,8 @@ const config = {
     geminiApiKey: process.env.GEMINI_API_KEY, //
     manualDriveFileId: process.env.MANUAL_DRIVE_FILE_ID,
 
-    errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000, // Default: 5 minutos
+errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : (4 * 60 * 60 * 1000),
+
 };
 
 // Validaciones básicas (puedes añadir más según sea necesario)
