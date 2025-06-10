@@ -51,7 +51,7 @@ export default (
         
 
         // --- Manejar Comandos de Barra (Slash Commands) ---
-        if (commandName === 'buscar-modelo') {
+        if (interaction.commandName === 'buscar-modelo') {
             await interaction.deferReply({ ephemeral: true });
             const modelToSearch = interaction.options.getString('modelo');
             const searchRootIdForModels = config.googleDriveModelsSharedDriveId; // Obtener el ID de la unidad compartida de la configuración
