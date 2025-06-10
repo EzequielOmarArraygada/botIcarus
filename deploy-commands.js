@@ -57,7 +57,8 @@ const commands = [
                 type: ApplicationCommandOptionType.String, // Importa ApplicationCommandOptionType
                 required: true,
             },
-        ],
+        ]},
+        {
         name: 'manual',
         description: 'Responde una pregunta basada en el manual de procedimientos.',
         options: [
@@ -67,9 +68,7 @@ const commands = [
                 type: ApplicationCommandOptionType.String,
                 required: true,
             },
-        ],
-    }
-	// Si tuvieras más comandos, los añadirías aquí en este array.
+        ]},
 ];
 
 // --- Proceso de Despliegue ---
