@@ -139,6 +139,7 @@ export async function uploadFileToDrive(driveInstance, folderId, attachment) {
  * @param {string} fileId - ID del archivo a descargar.
  * @returns {Promise<Buffer>} - Promesa que resuelve con el contenido del archivo como un Buffer.
  */
+
 export async function downloadFileFromDrive(driveInstance, fileId) {
     if (!driveInstance || !fileId) {
         throw new Error("downloadFileFromDrive: Parámetros incompletos.");
@@ -162,59 +163,54 @@ export async function downloadFileFromDrive(driveInstance, fileId) {
 /**
  * Busca carpetas en Google Drive por nombre que contengan la cadena dada.
  * Puede buscar en "Mi Unidad" o en "Unidades Compartidas".
+ * 
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {string} folderNameQuery - La cadena de texto a buscar dentro del nombre de la carpeta.
  * @param {string} [parentId=null] - (Opcional) El ID de la carpeta padre para limitar la búsqueda (en Mi Unidad).
  * @param {string} [teamDriveId=null] - (Opcional) El ID de la Unidad Compartida para buscar allí.
  * @returns {Promise<Array<object>>} - Promesa que resuelve con una lista de objetos { name, link } de las carpetas encontradas.
  */
-export async function searchFoldersByName(driveInstance, folderNameQuery, parentId = null, teamDriveId = null) {
-    if (!driveInstance || !folderNameQuery) {
-        throw new Error("searchFoldersByName: Parámetros incompletos (driveInstance o folderNameQuery).");
-    }
 
-    try {
-        let query = `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false`;
-        if (parentId) {
-            query += ` and '${parentId}' in parents`;
+export async function searchFoldersByName(driveInstance, folderNameQuery, teamDriveId = null) {
+    console.log(`DEBUG: Búsqueda de Drive Query: "mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false" ${teamDriveId ? `con teamDriveId: ${teamDriveId}` : ''}`);
+    console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
+
+    const folders = [];
+    let pageToken = null;
+
+    // Construye la query base
+    let query = `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false`;
+
+    // NO AÑADAS 'in parents' AQUÍ SI teamDriveId ES EL ID DE LA UNIDAD COMPARTIDA
+    // La búsqueda en la unidad compartida se controla con los parámetros `corpora` y `driveId`
+
+    do {
+        const listParams = {
+            q: query,
+            fields: 'nextPageToken, files(id, name, webViewLink)',
+            spaces: 'drive',
+            pageToken: pageToken,
+            // --- ¡Estas líneas son correctas y manejan la búsqueda en unidades compartidas! ---
+            corpora: teamDriveId ? 'drive' : 'user', // 'drive' para unidades compartidas, 'user' para Mi Unidad
+            includeItemsFromAllDrives: teamDriveId ? true : false, // Incluir elementos de todas las unidades
+            supportsAllDrives: true, // Importante para usar con corporar=drive
+            // --------------------------------------------------------------------------------
+        };
+
+        // Si se especifica un teamDriveId (que es el ID de la Unidad Compartida),
+        // se debe añadir al listParams como 'driveId'.
+        // No lo combines con 'in parents' en la 'q' si teamDriveId es la raíz de la unidad compartida.
+        if (teamDriveId) {
+            listParams.driveId = teamDriveId;
         }
 
-        console.log(`DEBUG: Búsqueda de Drive Query: "${query}"`);
-        console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
+        const res = await driveInstance.files.list(listParams);
+        folders.push(...res.data.files);
+        pageToken = res.data.nextPageToken;
+    } while (pageToken);
 
-        const folders = [];
-        let pageToken = null;
-
-        do {
-            const listParams = {
-                q: query,
-                fields: 'nextPageToken, files(id, name, webViewLink)',
-                spaces: 'drive',
-                pageToken: pageToken,
-                // --- ¡AÑADE ESTAS DOS LÍNEAS PARA BUSCAR EN UNIDADES COMPARTIDAS! ---
-                corpora: teamDriveId ? 'drive' : 'user', // 'drive' para unidades compartidas, 'user' para Mi Unidad
-                includeItemsFromAllDrives: teamDriveId ? true : false, // Incluir elementos de todas las unidades
-                supportsAllDrives: true, // Importante para usar con corporar=drive
-                // -------------------------------------------------------------------
-            };
-
-            // Si se especifica un teamDriveId, se debe añadir al listParams como 'driveId'
-            if (teamDriveId) {
-                listParams.driveId = teamDriveId;
-            }
-
-
-            const res = await driveInstance.files.list(listParams);
-            folders.push(...res.data.files);
-            pageToken = res.data.nextPageToken;
-        } while (pageToken);
-
-        return folders.map(folder => ({
-            name: folder.name,
-            link: folder.webViewLink
-        }));
-    } catch (error) {
-        console.error(`Error al buscar carpetas que contienen "${folderNameQuery}" en Google Drive:`, error);
-        throw error;
-    }
+    return folders.map(folder => ({
+        name: folder.name,
+        link: folder.webViewLink
+    }));
 }
