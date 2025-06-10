@@ -27,127 +27,55 @@ import setupGuildMemberAdd from './events/guildMemberAdd.js'; // <-- Importamos 
 // --- Configuración del Cliente de Discord ---
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent, // Necesario para acceder al contenido de los mensajes
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildMembers, // Necesario para el evento GuildMemberAdd
+        GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos, y para obtener displayName
+        GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate
+        GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes, incluyendo adjuntos
+        GatewayIntentBits.GuildMembers,   // <-- NECESARIO para el evento guildMemberAdd
     ]
 });
 
-// --- Inicialización y Caché del Manual (al inicio) ---
-let manualContent = ''; // Variable para almacenar el contenido del manual en caché
-async function initManual() {
-    try {
-        manualContent = await loadAndCacheManual(driveInstance, config.manualDriveFileId);
-        console.log('Manual cargado y en caché correctamente.');
-    } catch (error) {
-        console.error('Error al cargar y cachear el manual:', error);
-        // Si el manual no se carga, las funciones dependientes fallarán.
-    }
-}
-
-
-// --- Inicialización de Google Sheets y Drive ---
-let sheetsInstance;
-let driveInstance;
-try {
-    sheetsInstance = initializeGoogleSheets(config.googleCredentialsJson);
-    console.log("Google Sheets inicializado.");
-} catch (error) {
-    console.error("Error al inicializar Google Sheets en index.js:", error);
-    process.exit(1); // Sale si no puede inicializar Sheets
-}
-
-try {
-    driveInstance = initializeGoogleDrive(config.googleCredentialsJson);
-    console.log("Google Drive inicializado.");
-    initManual(); // Iniciar carga del manual una vez Drive esté inicializado
-} catch (error) {
-    console.error("Error al inicializar Google Drive en index.js:", error);
-    process.exit(1); // Sale si no puede inicializar Drive
-}
-
-// Mapa para mantener el estado de las interacciones pendientes del usuario (ej: para modales de varios pasos)
+// --- Manejo de Estado ---
 const userPendingData = new Map();
 
 
-// --- Listeners de Eventos del Cliente de Discord ---
+// --- Inicializar APIs de Google ---
+let sheetsInstance;
+let driveInstance;
+try {
+    if (!config.googleCredentialsJson) {
+        console.error("Error CRÍTICO: La variable de entorno GOOGLE_CREDENTIALS_JSON no está configurada.");
+        process.exit(1);
+    }
+    sheetsInstance = initializeGoogleSheets(config.googleCredentialsJson);
+    driveInstance = initializeGoogleDrive(config.googleCredentialsJson);
+
+} catch (error) {
+    console.error("Error al inicializar APIs de Google:", error);
+    process.exit(1);
+}
+
+
+// --- Eventos del Bot de Discord ---
 client.once('ready', async () => {
-    console.log(`Bot Icarus está en línea como ${client.user.tag}!`);
+    console.log(`Bot logeado como ${client.user.tag}!`);
 
-    // Registra los comandos globales
-    try {
-        const commands = [
-            {
-                name: 'factura-a',
-                description: 'Genera una solicitud de factura A para el cliente.',
-            },
-            {
-                name: 'envios',
-                description: 'Consulta el estado de un envío por su ID de Andreani.',
-                options: [
-                    {
-                        name: 'id_seguimiento',
-                        type: 3, // String type
-                        description: 'El ID de seguimiento de Andreani.',
-                        required: true,
-                    },
-                ],
-            },
-            {
-                name: 'agregar-caso',
-                description: 'Inicia el proceso para agregar un nuevo caso a la hoja de Google Sheets.',
-            },
-            {
-                name: 'buscar-caso',
-                description: 'Busca un caso por palabra clave.',
-                options: [
-                    {
-                        name: 'query',
-                        type: 3, // String
-                        description: 'Palabra clave a buscar en la hoja de casos.',
-                        required: true,
-                    },
-                ],
-            },
-            {
-                name: 'buscar-modelo',
-                description: 'Busca una carpeta de modelo en Google Drive.',
-                options: [
-                    {
-                        name: 'modelo',
-                        type: 3, // String type
-                        description: 'El nombre o parte del nombre del modelo a buscar.',
-                        required: true,
-                    },
-                ],
-            },
-            {
-                name: 'manual',
-                description: 'Pregunta algo al manual de Icarus.',
-                options: [
-                    {
-                        name: 'pregunta',
-                        type: 3, // String type
-                        description: 'Tu pregunta sobre el manual.',
-                        required: true,
-                    },
-                ],
-            },
-        ];
-
-        // Registra los comandos globalmente
-        await client.application.commands.set(commands);
-        console.log('Comandos de barra registrados globalmente.');
-    } catch (error) {
-        console.error('Error al registrar comandos de barra:', error);
+    // --- Cargar el manual en memoria ---
+    if (config.manualDriveFileId && driveInstance) {
+        await loadAndCacheManual(driveInstance, config.manualDriveFileId);
+    } else {
+        console.warn("No se cargará el manual porque falta MANUAL_DRIVE_FILE_ID o la instancia de Drive no está disponible.");
     }
 
-    // Iniciar verificación periódica de errores en la hoja de Casos BGH
-    if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.errorCheckIntervalMs) {
-        setInterval(() => checkSheetForErrors(sheetsInstance, client, config), config.errorCheckIntervalMs);
-        console.log(`Verificación periódica de errores en la hoja de Casos BGH iniciada. Intervalo: ${config.errorCheckIntervalMs / 1000} segundos.`);
+    console.log(`Conectado a Discord.`);
+    console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
+
+    // --- Iniciar la verificación periódica de errores en la hoja ---
+    // NOTA: Actualmente, la verificación de errores solo está implementada para la hoja principal de Casos (Solicitud BGH).
+    if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
+        console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos BGH.`);
+        // Llamar a la función importada y pasarle las dependencias necesarias
+        checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId);
+        setInterval(() => checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
     } else {
         console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
     }
@@ -191,6 +119,9 @@ console.log("Paso 1: Llegamos a la sección de conexión.");
 console.log(`Paso 2: Token de Discord cargado (primeros 5 chars): ${config.discordToken ? config.discordToken.substring(0, 5) + '...' : 'TOKEN NO CARGADO'}`);
 
 client.login(config.discordToken).catch(err => {
-    console.error("Fallo al conectar con Discord:", err);
-    process.exit(1); // Sale si la conexión falla
+    console.error("Paso 3: Error al conectar con Discord.", err);
+    console.error("Paso 3: Detalles completos del error de login:", err);
+    process.exit(1);
 });
+
+console.log("Paso 4: client.login() llamado. Esperando evento 'ready' o error.");
