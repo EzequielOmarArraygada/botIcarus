@@ -80,59 +80,6 @@ export async function findOrCreateDriveFolder(driveInstance, parentId, folderNam
     }
 }
 
-
-/**
- * Busca carpetas en Google Drive por nombre.
- * Puede buscar en Mi Unidad, Unidades Compartidas o dentro de una carpeta específica.
- * @param {object} driveInstance - Instancia de la API de Google Drive.
- * @param {string} folderNameQuery - Nombre de la carpeta a buscar.
- * @param {string|null} searchRootId - Opcional. ID de la Unidad Compartida O el ID de una carpeta padre donde buscar.
- * Si es null, busca en "Mi Unidad" y "Compartidos conmigo".
- * @returns {Promise<Array<{name: string, link: string}>>} - Promesa que resuelve con una lista de carpetas encontradas.
- */
-export async function searchFoldersByName(driveInstance, folderNameQuery, searchRootId = null) {
-    console.log(`DEBUG: Búsqueda de Drive Query para "${folderNameQuery}" ${searchRootId ? `con ID raíz: ${searchRootId}` : ''}`);
-    console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
-
-    const folders = [];
-    let pageToken = null;
-
-    let query = `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false`;
-    let listParams = {
-        fields: 'nextPageToken, files(id, name, webViewLink)',
-        spaces: 'drive',
-        pageToken: pageToken,
-        supportsAllDrives: true, // Esto es bueno mantenerlo
-    };
-
-    if (searchRootId) {
-        // Asumimos que si se proporciona un searchRootId, es una carpeta normal que queremos buscar dentro.
-        // Esto NO es para Unidades Compartidas (Shared Drives).
-        query += ` and '${searchRootId}' in parents`;
-        listParams.corpora = 'user'; // Busca en Mi Unidad (incluyendo las carpetas compartidas con el usuario)
-        listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos compartidos
-        // IMPORTANTE: NO uses listParams.driveId ni corpora: 'drive' aquí.
-    } else {
-        // Si no se proporciona un ID raíz, busca en "Mi Unidad" y "Compartidos conmigo" por defecto.
-        listParams.corpora = 'user';
-        listParams.includeItemsFromAllDrives = true; // Incluir elementos compartidos accesibles por la cuenta de servicio
-    }
-
-    listParams.q = query; // Asigna la query construida
-
-    do {
-        const res = await driveInstance.files.list(listParams);
-        folders.push(...res.data.files);
-        pageToken = res.data.nextPageToken;
-        listParams.pageToken = pageToken; // Actualiza pageToken para la siguiente iteración
-    } while (pageToken);
-
-    return folders.map(folder => ({
-        name: folder.name,
-        link: folder.webViewLink
-    }));
-}
-
 /**
  * Descarga el contenido de un archivo desde Google Drive.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
