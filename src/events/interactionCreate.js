@@ -47,41 +47,7 @@ export default (
 ) => {
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
-
-        
-
-        // --- Manejar Comandos de Barra (Slash Commands) ---
-        if (interaction.commandName === 'buscar-modelo') {
-            await interaction.deferReply({ ephemeral: true });
-            const modelToSearch = interaction.options.getString('modelo');
-            const searchRootIdForModels = config.googleDriveModelsSharedDriveId; // Obtener el ID de la unidad compartida de la configuración
-
-            if (!modelToSearch) {
-                return await interaction.editReply('Por favor, proporciona el modelo a buscar.');
-            }
-
-            console.log(`DEBUG: Recibido comando /buscar-modelo para: "${modelToSearch}"`);
-            console.log(`DEBUG: ID de raíz para búsqueda de modelos: "${searchRootIdForModels}"`);
-
-            try {
-                // PASAR 'config' como el cuarto argumento a searchFoldersByName
-                const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, searchRootIdForModels, config);
-
-                if (foundFolders.length > 0) {
-                    const folderList = foundFolders.map(folder => `- [${folder.name}](${folder.link})`).join('\n');
-                    await interaction.editReply({
-                        content: `Se encontraron ${foundFolders.length} carpetas para "${modelToSearch}":\n${folderList}`,
-                        ephemeral: true
-                    });
-                } else {
-                    await interaction.editReply({ content: `No se encontraron carpetas para "${modelToSearch}".`, ephemeral: true });
-                }
-            } catch (error) {
-                console.error(`Error al buscar modelo "${modelToSearch}" en Google Drive:`, error);
-                await interaction.editReply({ content: 'Ocurrió un error al buscar el modelo en Google Drive. Por favor, inténtalo de nuevo más tarde.', ephemeral: true });
-            }
-
-        
+       
             // Verifica si es el comando "/factura-a"
             if (interaction.commandName === 'factura-a') {
                  console.log(`Comando /factura-a recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
@@ -423,8 +389,34 @@ export default (
                     console.error("Error al procesar el comando /manual:", error);
                     await interaction.editReply(`❌ Hubo un error al procesar tu pregunta. Inténtalo de nuevo más tarde. (Detalles: ${error.message})`);
                 }
+            } else if (interaction.commandName === 'buscar-modelo') {
+            await interaction.deferReply({ ephemeral: true });
+            const modelToSearch = interaction.options.getString('modelo');
+            const modelRootFolderId = config.googleDriveModelsSharedDriveId; 
+
+            if (!modelToSearch) {
+                return await interaction.editReply('Por favor, proporciona el modelo a buscar.');
             }
-        }
+
+            console.log(`DEBUG: Recibido comando /buscar-modelo para: "${modelToSearch}"`);
+            console.log(`DEBUG: ID de raíz para búsqueda de modelos: "${searchRootIdForModels}"`);
+
+            try {
+                const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, modelRootFolderId);
+
+                if (foundFolders.length > 0) {
+                    const folderList = foundFolders.map(folder => `- [${folder.name}](${folder.link})`).join('\n');
+                    await interaction.editReply({
+                        content: `Se encontraron ${foundFolders.length} carpetas para "${modelToSearch}":\n${folderList}`,
+                        ephemeral: true
+                    });
+                } else {
+                    await interaction.editReply({ content: `No se encontraron carpetas para "${modelToSearch}".`, ephemeral: true });
+                }
+            } catch (error) {
+                console.error(`Error al buscar modelo "${modelToSearch}" en Google Drive:`, error);
+                await interaction.editReply({ content: 'Ocurrió un error al buscar el modelo en Google Drive. Por favor, inténtalo de nuevo más tarde.', ephemeral: true });
+            }}
 
         // --- Manejar Interacciones de Select Menu ---
         if (interaction.isStringSelectMenu()) {

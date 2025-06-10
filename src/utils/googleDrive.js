@@ -35,140 +35,142 @@ export function initializeGoogleDrive(credentialsJson) {
  * @returns {Promise<string>} - Promesa que resuelve con el ID de la carpeta encontrada o creada.
  */
 export async function findOrCreateDriveFolder(driveInstance, parentId, folderName) {
-    // Primero, intentar encontrar la carpeta existente
-    try {
-        // Construir la consulta de búsqueda
-        // Si hay un parentId, buscar solo dentro de esa carpeta
-        const query = parentId
-            ? `'<span class="math-inline">\{parentId\}' in parents and name \= '</span>{folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
-            : `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    let folderId = null;
+    let pageToken = null;
 
-        console.log(`Buscando carpeta existente: "${folderName}" en padre: ${parentId || 'raíz'}`);
-        const response = await driveInstance.files.list({
-            q: query,
-            spaces: 'drive',
-            fields: 'files(id, name)',
-            // No se necesita pageSize aquí ya que esperamos 0 o 1 resultado para un nombre exacto
-        });
-
-        if (response.data.files.length > 0) {
-            console.log(`Carpeta existente encontrada: "${response.data.files[0].name}" (ID: ${response.data.files[0].id})`);
-            return response.data.files[0]; // Retorna la primera carpeta encontrada
-        }
-    } catch (error) {
-        console.error(`Error al buscar carpeta existente "${folderName}":`, error);
-        // No relanzar, intentar crear en su lugar
+    let query = `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`;
+    if (parentId) {
+        query += ` and '${parentId}' in parents`;
     }
 
-    // Si no se encuentra, crearla
+    // console.log(`DEBUG: findOrCreateDriveFolder query: ${query}`); // Debugging line
+
     try {
-        console.log(`Creando nueva carpeta: "${folderName}" en padre: ${parentId || 'raíz'}`);
+        do {
+            const res = await driveInstance.files.list({
+                q: query,
+                fields: 'nextPageToken, files(id, name)',
+                spaces: 'drive',
+                pageToken: pageToken,
+                corpora: parentId ? 'user' : 'drive', // 'user' para Mi Unidad, 'drive' para Shared Drives
+                includeItemsFromAllDrives: true,
+                ...(parentId && {driveId: parentId}), // Solo si parentId es un Shared Drive ID
+            });
+
+            if (res.data.files.length > 0) {
+                folderId = res.data.files[0].id;
+                // console.log(`DEBUG: Carpeta encontrada: ${folderName}, ID: ${folderId}`); // Debugging line
+                break;
+            }
+            pageToken = res.data.nextPageToken;
+        } while (pageToken);
+
+        if (folderId) {
+            return folderId;
+        }
+
+        // Si no se encontró, crear la carpeta
         const fileMetadata = {
-            name: folderName,
-            mimeType: 'application/vnd.google-apps.folder',
-            parents: parentId ? [parentId] : [], // Añadir la carpeta padre si se especifica
+            'name': folderName,
+            'mimeType': 'application/vnd.google-apps.folder'
         };
+        if (parentId) {
+            fileMetadata.parents = [parentId];
+        }
+
         const folder = await driveInstance.files.create({
             resource: fileMetadata,
-            fields: 'id, name, webViewLink, alternateLink',
-        });
-        console.log(`Carpeta creada: "${folder.data.name}" (ID: ${folder.data.id})`);
-        return folder.data;
-    } catch (error) {
-        console.error(`Error al crear carpeta "${folderName}":`, error);
-        throw error; // Relanzar si falla la creación
-    }
-}
-
-
-/**
- * Sube un archivo (adjunto de Discord) a Google Drive.
- * @param {object} driveInstance - Instancia de la API de Google Drive.
- * @param {string} folderId - ID de la carpeta donde subir el archivo.
- * @param {object} attachment - Objeto de adjunto de Discord (contiene url, name, etc.).
- * @returns {Promise<object>} - Promesa que resuelve con los metadatos del archivo subido.
- */
-export async function uploadFileToDrive(driveInstance, folderId, attachment) {
-    if (!driveInstance || !folderId || !attachment || !attachment.url || !attachment.name) {
-        throw new Error("uploadFileToDrive: Parámetros de adjunto incompletos.");
-    }
-
-    try {
-        console.log(`Descargando adjunto para subir: ${attachment.name}`);
-        // Descargar el archivo de Discord
-        const response = await fetch(attachment.url);
-        if (!response.ok) {
-            throw new Error(`Failed to download attachment: ${response.statusText}`);
-        }
-        const fileBuffer = await response.buffer(); // Obtener el contenido binario del archivo
-
-        // Subir el archivo a Google Drive
-        console.log(`Subiendo archivo "${attachment.name}" a la carpeta ID: ${folderId}`);
-        const uploadedFile = await driveInstance.files.create({
-            requestBody: {
-                name: attachment.name,
-                parents: [folderId], // Asocia el archivo a la carpeta creada
-            },
-            media: {
-                mimeType: attachment.contentType || 'application/octet-stream', // Usa el tipo MIME del adjunto o un genérico
-                body: Buffer.from(fileBuffer), // Envía el buffer del archivo
-            },
-            fields: 'id, name, webViewLink, alternateLink', // Campos que queremos de vuelta (enlace directo y nombre)
-            // Usamos 'fields' para optimizar la respuesta
-            // Puedes añadir 'uploadType: 'multipart'' si encuentras problemas con archivos grandes,
-            // pero fetch() y Buffer.from() generalmente manejan bien el flujo.
-            // En Drive API v3, no es necesario 'uploadType: 'resumable'' a menos que sea un archivo muy grande
-            // y quieras reanudar subidas. Para adjuntos de Discord, generalmente 'multipart' es suficiente.
-            supportsAllDrives: true, // Importante si trabajas con unidades compartidas
-            // duplicate: false, // Drive automáticamente maneja nombres duplicados añadiendo un número
-            // En este caso, si ya existe un archivo con el mismo nombre, Drive crea uno nuevo
+            fields: 'id',
+            supportsAllDrives: true,
         });
 
-        console.log(`Archivo "${uploadedFile.data.name}" subido con éxito. ID de Drive: ${uploadedFile.data.id}`);
-        return uploadedFile.data; // Retornar ID y nombre del archivo subido
+        // console.log(`DEBUG: Carpeta creada: ${folderName}, ID: ${folder.data.id}`); // Debugging line
+        return folder.data.id;
 
     } catch (error) {
-        console.error(`Error al descargar o subir el archivo ${attachment.name}:`, error);
-        throw error; // Relanzar el error para manejarlo en el try/catch principal de la interacción
-    }
-}
-
-/**
- * Descarga el contenido de un archivo desde Google Drive.
- * @param {object} driveInstance - Instancia de la API de Google Drive.
- * @param {string} fileId - ID del archivo a descargar.
- * @returns {Promise<Buffer>} - Promesa que resuelve con el contenido del archivo como un Buffer.
- */
-
-export async function downloadFileFromDrive(driveInstance, fileId) {
-    if (!driveInstance || !fileId) {
-        throw new Error("downloadFileFromDrive: Parámetros incompletos.");
-    }
-
-    try {
-        console.log(`Intentando descargar archivo con ID: ${fileId}`);
-        const response = await driveInstance.files.get(
-            { fileId: fileId, alt: 'media' },
-            { responseType: 'arraybuffer' } // Muy importante para obtener el contenido binario
-        );
-
-        // El contenido está en response.data
-        return Buffer.from(response.data);
-    } catch (error) {
-        console.error(`Error al descargar archivo con ID ${fileId} de Google Drive:`, error);
+        console.error(`Error al buscar o crear la carpeta ${folderName}:`, error);
         throw error;
     }
 }
 
+
 /**
- * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre o una Unidad Compartida.
+ * Sube un archivo a Google Drive.
+ * @param {object} driveInstance - Instancia de la API de Google Drive.
+ * @param {string} folderId - ID de la carpeta donde subir el archivo.
+ * @param {string} filePath - Ruta local del archivo a subir.
+ * @param {string} fileName - Nombre del archivo en Drive.
+ * @param {string} mimeType - Tipo MIME del archivo.
+ * @returns {Promise<object>} - Promesa que resuelve con los metadatos del archivo subido.
+ */
+export async function uploadFileToDrive(driveInstance, folderId, filePath, fileName, mimeType) {
+    const fileMetadata = {
+        'name': fileName,
+        parents: [folderId]
+    };
+    const media = {
+        mimeType: mimeType,
+        body: require('fs').createReadStream(filePath)
+    };
+
+    try {
+        const file = await driveInstance.files.create({
+            resource: fileMetadata,
+            media: media,
+            fields: 'id',
+            supportsAllDrives: true,
+        });
+        console.log('Archivo subido, ID:', file.data.id);
+        return file.data;
+    } catch (error) {
+        console.error('Error al subir el archivo:', error);
+        throw error;
+    }
+}
+
+
+/**
+ * Descarga un archivo de Google Drive.
+ * @param {object} driveInstance - Instancia de la API de Google Drive.
+ * @param {string} fileId - ID del archivo a descargar.
+ * @returns {Promise<string>} - Promesa que resuelve con el contenido del archivo como texto.
+ */
+export async function downloadFileFromDrive(driveInstance, fileId) {
+    try {
+        const res = await driveInstance.files.get({
+            fileId: fileId,
+            alt: 'media',
+        }, {
+            responseType: 'stream'
+        });
+
+        return new Promise((resolve, reject) => {
+            let data = '';
+            res.data.on('data', chunk => {
+                data += chunk;
+            });
+            res.data.on('end', () => {
+                resolve(data);
+            });
+            res.data.on('error', err => {
+                reject(err);
+            });
+        });
+    } catch (error) {
+        console.error('Error al descargar el archivo:', error);
+        throw error;
+    }
+}
+
+
+/**
+ * Busca carpetas en Google Drive por nombre dentro de una carpeta padre o en la raíz de Mi Unidad.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {string} folderNameQuery - Nombre de la carpeta a buscar.
- * @param {string} searchRootId - ID de la carpeta padre o de la Unidad Compartida donde buscar.
- * @param {object} config - Objeto de configuración que contiene googleDriveModelsSharedDriveId.
+ * @param {string} searchRootId - ID de la carpeta padre donde buscar. Si es null/undefined, busca en la raíz de 'Mi Unidad'.
  * @returns {Promise<Array<object>>} - Promesa que resuelve con un array de objetos { name, link } de las carpetas encontradas.
  */
-export async function searchFoldersByName(driveInstance, folderNameQuery, searchRootId = null, config) { // AÑADIDO: 'config' como parámetro
+export async function searchFoldersByName(driveInstance, folderNameQuery, searchRootId = null) {
     console.log(`DEBUG: Búsqueda de Drive Query para "${folderNameQuery}" ${searchRootId ? `con ID raíz: ${searchRootId}` : ''}`);
     console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
 
@@ -180,28 +182,18 @@ export async function searchFoldersByName(driveInstance, folderNameQuery, search
         fields: 'nextPageToken, files(id, name, webViewLink)',
         spaces: 'drive',
         pageToken: pageToken,
-        supportsAllDrives: true, // Esto es bueno mantenerlo
+        supportsAllDrives: true,
     };
 
     if (searchRootId) {
-        // Determinar si es una Unidad Compartida (Shared Drive) o una carpeta normal
-        // Asumimos que si el searchRootId coincide con el ID de la Unidad Compartida de los modelos, es una Unidad Compartida.
-        if (config && config.googleDriveModelsSharedDriveId && searchRootId === config.googleDriveModelsSharedDriveId) {
-            console.log('DEBUG: Realizando búsqueda en Unidad Compartida.');
-            listParams.corpora = 'drive'; // Especifica que la búsqueda es en una Unidad Compartida
-            listParams.driveId = searchRootId; // ID de la Unidad Compartida
-            listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos dentro de la Unidad Compartida
-            // La query NO necesita 'in parents' cuando se usa driveId.
-            // La query se mantiene tal cual: `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false`
-        } else {
-            console.log('DEBUG: Realizando búsqueda en carpeta normal (no Shared Drive).');
-            // Es una carpeta normal dentro de 'Mi Unidad' o compartida con el usuario
-            query += ` and '${searchRootId}' in parents`;
-            listParams.corpora = 'user'; // Busca en Mi Unidad (incluyendo las carpetas compartidas con el usuario)
-            listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos compartidos
-        }
+        console.log('DEBUG: Realizando búsqueda dentro de una carpeta específica en Mi Unidad.');
+        // Si se proporciona un searchRootId, es una carpeta normal que queremos buscar dentro.
+        // Ahora que la titularidad ha sido cedida, esta carpeta está en "Mi Unidad" del servicio.
+        query += ` and '${searchRootId}' in parents`;
+        listParams.corpora = 'user'; // Busca en Mi Unidad (incluyendo las carpetas compartidas con el usuario)
+        listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos compartidos
     } else {
-        console.log('DEBUG: Realizando búsqueda sin ID raíz (Mi Unidad/Compartidos conmigo).');
+        console.log('DEBUG: Realizando búsqueda en la raíz de Mi Unidad / Compartidos conmigo.');
         // Si no se proporciona un ID raíz, busca en "Mi Unidad" y "Compartidos conmigo" por defecto.
         listParams.corpora = 'user';
         listParams.includeItemsFromAllDrives = true; // Incluir elementos compartidos accesibles por la cuenta de servicio
