@@ -161,15 +161,14 @@ export async function downloadFileFromDrive(driveInstance, fileId) {
 }
 
 /**
- * Busca carpetas en Google Drive por nombre.
- * Puede buscar en Mi Unidad, Unidades Compartidas o dentro de una carpeta específica.
+ * Busca una carpeta en Google Drive por nombre dentro de una carpeta padre o una Unidad Compartida.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {string} folderNameQuery - Nombre de la carpeta a buscar.
- * @param {string|null} searchRootId - Opcional. ID de la Unidad Compartida O el ID de una carpeta padre donde buscar.
- * Si es null, busca en "Mi Unidad" y "Compartidos conmigo".
- * @returns {Promise<Array<{name: string, link: string}>>} - Promesa que resuelve con una lista de carpetas encontradas.
+ * @param {string} searchRootId - ID de la carpeta padre o de la Unidad Compartida donde buscar.
+ * @param {object} config - Objeto de configuración que contiene googleDriveModelsSharedDriveId.
+ * @returns {Promise<Array<object>>} - Promesa que resuelve con un array de objetos { name, link } de las carpetas encontradas.
  */
-export async function searchFoldersByName(driveInstance, folderNameQuery, searchRootId = null) {
+export async function searchFoldersByName(driveInstance, folderNameQuery, searchRootId = null, config) { // AÑADIDO: 'config' como parámetro
     console.log(`DEBUG: Búsqueda de Drive Query para "${folderNameQuery}" ${searchRootId ? `con ID raíz: ${searchRootId}` : ''}`);
     console.log(`Buscando carpetas que contengan "${folderNameQuery}" en Google Drive...`);
 
@@ -185,13 +184,24 @@ export async function searchFoldersByName(driveInstance, folderNameQuery, search
     };
 
     if (searchRootId) {
-        // Asumimos que si se proporciona un searchRootId, es una carpeta normal que queremos buscar dentro.
-        // Esto NO es para Unidades Compartidas (Shared Drives).
-        query += ` and '${searchRootId}' in parents`;
-        listParams.corpora = 'user'; // Busca en Mi Unidad (incluyendo las carpetas compartidas con el usuario)
-        listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos compartidos
-        // IMPORTANTE: NO uses listParams.driveId ni corpora: 'drive' aquí.
+        // Determinar si es una Unidad Compartida (Shared Drive) o una carpeta normal
+        // Asumimos que si el searchRootId coincide con el ID de la Unidad Compartida de los modelos, es una Unidad Compartida.
+        if (config && config.googleDriveModelsSharedDriveId && searchRootId === config.googleDriveModelsSharedDriveId) {
+            console.log('DEBUG: Realizando búsqueda en Unidad Compartida.');
+            listParams.corpora = 'drive'; // Especifica que la búsqueda es en una Unidad Compartida
+            listParams.driveId = searchRootId; // ID de la Unidad Compartida
+            listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos dentro de la Unidad Compartida
+            // La query NO necesita 'in parents' cuando se usa driveId.
+            // La query se mantiene tal cual: `mimeType='application/vnd.google-apps.folder' and name contains '${folderNameQuery}' and trashed=false`
+        } else {
+            console.log('DEBUG: Realizando búsqueda en carpeta normal (no Shared Drive).');
+            // Es una carpeta normal dentro de 'Mi Unidad' o compartida con el usuario
+            query += ` and '${searchRootId}' in parents`;
+            listParams.corpora = 'user'; // Busca en Mi Unidad (incluyendo las carpetas compartidas con el usuario)
+            listParams.includeItemsFromAllDrives = true; // Para asegurar que también se incluyen los elementos compartidos
+        }
     } else {
+        console.log('DEBUG: Realizando búsqueda sin ID raíz (Mi Unidad/Compartidos conmigo).');
         // Si no se proporciona un ID raíz, busca en "Mi Unidad" y "Compartidos conmigo" por defecto.
         listParams.corpora = 'user';
         listParams.includeItemsFromAllDrives = true; // Incluir elementos compartidos accesibles por la cuenta de servicio
@@ -199,13 +209,24 @@ export async function searchFoldersByName(driveInstance, folderNameQuery, search
 
     listParams.q = query; // Asigna la query construida
 
-    do {
-        const res = await driveInstance.files.list(listParams);
-        folders.push(...res.data.files);
-        pageToken = res.data.nextPageToken;
-        listParams.pageToken = pageToken; // Actualiza pageToken para la siguiente iteración
-    } while (pageToken);
+    console.log('DEBUG: Parámetros finales de la API de Drive para files.list:', JSON.stringify(listParams, null, 2)); // LOG DE DEBUG
+    console.log('DEBUG: Query final de la API de Drive:', query); // LOG DE DEBUG
 
+    try {
+        do {
+            const res = await driveInstance.files.list(listParams);
+            console.log('DEBUG: Respuesta de la API de Drive (archivos encontrados en esta página):', res.data.files); // LOG DE DEBUG
+            folders.push(...res.data.files);
+            pageToken = res.data.nextPageToken;
+            listParams.pageToken = pageToken; // Actualiza pageToken para la siguiente iteración
+        } while (pageToken);
+    } catch (error) {
+        console.error('ERROR: Fallo al listar archivos/carpetas en Google Drive:', error.message);
+        throw error; // Re-lanza el error para que sea manejado por el llamador
+    }
+
+
+    console.log(`DEBUG: Se encontraron ${folders.length} carpetas para "${folderNameQuery}".`); // LOG DE DEBUG
     return folders.map(folder => ({
         name: folder.name,
         link: folder.webViewLink

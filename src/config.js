@@ -20,14 +20,12 @@ const config = {
     sheetRangeCasos: process.env.GOOGLE_SHEET_RANGE_CASOS,
     sheetRangeCasosRead: process.env.GOOGLE_SHEET_RANGE_CASOS_READ,
     spreadsheetIdBuscarCaso: process.env.GOOGLE_SHEET_SEARCH_SHEET_ID || process.env.GOOGLE_SHEET_ID_CASOS, 
-    sheetsToSearch: process.env.GOOGLE_SHEET_SEARCH_SHEETS ? process.env.GOOGLE_SHEET_SEARCH_SHEETS.split(',').map(s => s.trim()) : [],
-    parentDriveFolderId: process.env.PARENT_DRIVE_FOLDER_ID,
+    sheetsToSearch: process.env.GOOGLE_SHEET_SEARCH_SHEETS ? process.env.GOOGLE_SHEET_SEARCH_SHEETS.split(',') : ['Casos'],
 
-    geminiApiKey: process.env.GEMINI_API_KEY, //
+    googleDriveModelsSharedDriveId: process.env.GOOGLE_DRIVE_MODELS_SHARED_DRIVE_ID, // AÑADIDO: nueva variable
+
+    geminiApiKey: process.env.GEMINI_API_KEY,
     manualDriveFileId: process.env.MANUAL_DRIVE_FILE_ID,
-
-    googleDriveModelsSharedDriveId: process.env.GOOGLE_DRIVE_MODELS_SHARED_DRIVE_ID,
-
     errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : 300000, // Default: 5 minutos
 };
 
@@ -44,6 +42,10 @@ if (!config.googleCredentialsJson) {
     process.exit(1);
 }
 
+if (!config.googleDriveModelsSharedDriveId) { // AÑADIDO: Validación para la nueva variable
+    console.warn("Advertencia: GOOGLE_DRIVE_MODELS_SHARED_DRIVE_ID no configurado. El comando /buscar-modelo podría no funcionar correctamente si tus modelos están en una Unidad Compartida.");
+}
+
 if (!config.geminiApiKey) {
     console.warn("Advertencia: GEMINI_API_KEY no configurada. El comando del manual no funcionará.");
 }
@@ -53,10 +55,8 @@ if (!config.manualDriveFileId) {
 
 // Validar intervalo de verificación de errores
 if (isNaN(config.errorCheckIntervalMs) || config.errorCheckIntervalMs < 10000) { // Mínimo 10 segundos
-    console.warn(`ERROR_CHECK_INTERVAL_MS configurado incorrectamente o muy bajo (${process.env.ERROR_CHECK_INTERVAL_MS}). Usando valor por defecto: ${config.errorCheckIntervalMs} ms.`);
-    config.errorCheckIntervalMs = 300000; // Reset a 5 minutos si es inválido
+    console.warn(`ERROR_CHECK_INTERVAL_MS configurado incorrectamente o muy bajo (${process.env.ERROR_CHECK_INTERVAL_MS}). Se usará el valor por defecto de 5 minutos.`);
+    config.errorCheckIntervalMs = 300000;
 }
 
-
-// Exportar el objeto de configuración
 export default config;

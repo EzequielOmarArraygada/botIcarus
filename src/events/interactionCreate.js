@@ -25,6 +25,8 @@ import { findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive, sear
  * @param {function} uploadFileToDrive - Función de utilidad de Drive. // Pasar la función
  * @param {function} getManualText - Función para obtener el texto del manual.
  * @param {function} getAnswerFromManual - Función para obtener respuestas del manual.
+ * @param {function} searchFoldersByName - Función para buscar carpetas por nombre en Drive. // Asegurarse que se pasa
+
  */
 export default (
     client,
@@ -49,38 +51,34 @@ export default (
         
 
         // --- Manejar Comandos de Barra (Slash Commands) ---
-        if (interaction.isChatInputCommand()) {
+        if (commandName === 'buscar-modelo') {
+            await interaction.deferReply({ ephemeral: true });
+            const modelToSearch = interaction.options.getString('modelo');
+            const searchRootIdForModels = config.googleDriveModelsSharedDriveId; // Obtener el ID de la unidad compartida de la configuración
 
-            // Manejador para el nuevo comando /buscar-modelo
-            if (interaction.commandName === 'buscar-modelo') {
-                await interaction.deferReply({ ephemeral: true }); // Para asegurar que el bot responde a tiempo
+            if (!modelToSearch) {
+                return await interaction.editReply('Por favor, proporciona el modelo a buscar.');
+            }
 
-                // *** ESTA ES LA LÍNEA CRÍTICA A AÑADIR O MODIFICAR ***
-                // Asegúrate de que 'modelo' es el nombre de tu opción en el comando
-                const modelToSearch = interaction.options.getString('modelo');
+            console.log(`DEBUG: Recibido comando /buscar-modelo para: "${modelToSearch}"`);
+            console.log(`DEBUG: ID de raíz para búsqueda de modelos: "${searchRootIdForModels}"`);
 
-                if (!modelToSearch) {
-                    await interaction.editReply('Por favor, proporciona el modelo a buscar. Ejemplo: `/buscar-modelo B330DSS9`');
-                    return;
+            try {
+                // PASAR 'config' como el cuarto argumento a searchFoldersByName
+                const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, searchRootIdForModels, config);
+
+                if (foundFolders.length > 0) {
+                    const folderList = foundFolders.map(folder => `- [${folder.name}](${folder.link})`).join('\n');
+                    await interaction.editReply({
+                        content: `Se encontraron ${foundFolders.length} carpetas para "${modelToSearch}":\n${folderList}`,
+                        ephemeral: true
+                    });
+                } else {
+                    await interaction.editReply({ content: `No se encontraron carpetas para "${modelToSearch}".`, ephemeral: true });
                 }
-
-                // Obtener el ID de la unidad compartida desde la configuración
-                const sharedDriveIdForModels = config.googleDriveModelsSharedDriveId;
-
-                try {
-                    // Ahora modelToSearch está definido y se pasa correctamente
-                    const foundFolders = await searchFoldersByName(driveInstance, modelToSearch, sharedDriveIdForModels);
-
-                    if (foundFolders && foundFolders.length > 0) {
-                        const folderList = foundFolders.map(folder => `[${folder.name}](${folder.link})`).join('\n');
-                        await interaction.editReply(`Se encontraron las siguientes carpetas para "${modelToSearch}":\n${folderList}`);
-                    } else {
-                        await interaction.editReply(`Lo siento, no se encontraron carpetas que contengan "${modelToSearch}" en su nombre.`);
-                    }
-                } catch (error) {
-                    console.error(`Error al procesar el comando /buscar-modelo para "${modelToSearch}":`, error);
-                    await interaction.editReply('Hubo un error al buscar las carpetas. Por favor, inténtalo de nuevo más tarde.');
-                }
+            } catch (error) {
+                console.error(`Error al buscar modelo "${modelToSearch}" en Google Drive:`, error);
+                await interaction.editReply({ content: 'Ocurrió un error al buscar el modelo en Google Drive. Por favor, inténtalo de nuevo más tarde.', ephemeral: true });
             }
 
         
