@@ -13,8 +13,6 @@ import { fileURLToPath } from 'node:url';
 // Estas se siguen importando en index.js si se usan para registrar comandos iniciales
 // o si se llaman directamente desde index.js en el futuro.
 // Las funciones que CONSTRUYEN los modales/select menus están en interactions/modals.js y interactions/selectMenus.js
-import { buildFacturaAModal, buildCasoModal } from './interactions/modals.js';
-import { buildTipoSolicitudSelectMenu } from './interactions/selectMenus.js';
 
 
 // --- Importaciones de utilidades ---
