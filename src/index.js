@@ -4,6 +4,19 @@ import { Client, GatewayIntentBits } from 'discord.js';
 // --- Importación del archivo de configuración ---
 import config from './config.js'; // Importamos el objeto config
 
+import { Collection } from 'discord.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
+// Estas se siguen importando en index.js si se usan para registrar comandos iniciales
+// o si se llaman directamente desde index.js en el futuro.
+// Las funciones que CONSTRUYEN los modales/select menus están en interactions/modals.js y interactions/selectMenus.js
+import { buildFacturaAModal, buildCasoModal } from './interactions/modals.js';
+import { buildTipoSolicitudSelectMenu } from './interactions/selectMenus.js';
+
+
 // --- Importaciones de utilidades ---
 import { initializeGoogleSheets, checkSheetForErrors, checkIfPedidoExists } from './utils/googleSheets.js';
 import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive } from './utils/googleDrive.js';
@@ -33,6 +46,8 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,   // <-- NECESARIO para el evento guildMemberAdd
     ]
 });
+
+client.commands = new Collection();
 
 // --- Manejo de Estado ---
 const userPendingData = new Map();
@@ -79,6 +94,31 @@ client.once('ready', async () => {
     } else {
         console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
     }
+
+    const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- Cargar comandos de barra desde la nueva carpeta commands/ ---
+const commandsPath = path.join(__dirname, 'interactions', 'commands'); // <-- Nueva ruta
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    import(filePath)
+        .then(module => {
+            const command = module.default; // Asumiendo que cada comando exporta con `export default`
+            if ('data' in command && 'execute' in command) {
+                client.commands.set(command.data.name, command);
+                console.log(`Comando cargado: /${command.data.name}`);
+            } else {
+                console.warn(`[ADVERTENCIA] El comando en ${filePath} le falta una propiedad "data" o "execute" requerida.`);
+            }
+        })
+        .catch(error => {
+            console.error(`Error al cargar el comando ${filePath}:`, error);
+        });
+}
+
 });
 
 // --- Configurar Listeners de Eventos ---
@@ -98,15 +138,6 @@ setupInteractionCreate(
     config,
     sheetsInstance,
     driveInstance,
-    buildFacturaAModal,
-    buildTipoSolicitudSelectMenu,
-    buildCasoModal,
-    checkIfPedidoExists,
-    getAndreaniTracking,
-    findOrCreateDriveFolder,
-    uploadFileToDrive,
-    getManualText,
-    getAnswerFromManual
 );
 
 // --- Configurar Listener para Nuevos Miembros ---
