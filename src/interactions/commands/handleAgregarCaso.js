@@ -1,7 +1,12 @@
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js'; // Asegúrate de importar SlashCommandBuilder
 import { buildTipoSolicitudSelectMenu } from '../../interactions/selectMenus.js';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
-export async function handleAgregarCasoCommand(interaction, sheetsInstance, config, userPendingData) {
+// Define la data del comando
+export const data = new SlashCommandBuilder()
+    .setName('agregar-caso') // El nombre del comando de barra en Discord
+    .setDescription('Inicia el proceso para agregar un nuevo caso.');
+
+export async function execute(interaction, sheetsInstance, config, userPendingData) { // Cambiado a 'execute'
     if (interaction.channelId !== config.targetChannelIdCasos) {
         await interaction.reply({
             content: `❌ Este comando solo puede ser usado en el canal <#${config.targetChannelIdCasos}>.`,

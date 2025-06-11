@@ -1,7 +1,17 @@
-import { getAndreaniTracking } from '../../utils/andreani.js'; // Ajusta la ruta si es necesario
+import { SlashCommandBuilder } from 'discord.js'; // Asegúrate de importar SlashCommandBuilder
+import { getAndreaniTracking } from '../../utils/andreani.js';
 
-export async function handleAndreaniCommand(interaction, config) {
-    await interaction.deferReply(); // Deferir la respuesta porque la llamada a la API puede tardar
+// Define la data del comando
+export const data = new SlashCommandBuilder()
+    .setName('andreani')
+    .setDescription('Consulta el estado de seguimiento de un paquete de Andreani.')
+    .addStringOption(option =>
+        option.setName('numero_seguimiento')
+            .setDescription('El número de seguimiento de Andreani')
+            .setRequired(true));
+
+export async function execute(interaction, config) { // Cambiado a 'execute'
+    await interaction.deferReply();
 
     const trackingNumber = interaction.options.getString('numero_seguimiento');
 
@@ -29,6 +39,6 @@ export async function handleAndreaniCommand(interaction, config) {
 
     } catch (error) {
         console.error(`Error al consultar Andreani para ${trackingNumber}:`, error);
-        await interaction.editReply({ content: '❌ Hubo un error al consultar el seguimiento de Andreani. Por favor, verifica el número e inténtalo de nuevo más tarde.', ephemeral: true });
+        await interaction.editReply({ content: '❌ Hubo un error al consultar el seguimiento de Andreani. Por favor, verifica el número e inténtalo de nuevo.', ephemeral: true });
     }
 }

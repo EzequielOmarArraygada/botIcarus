@@ -1,7 +1,17 @@
+import { SlashCommandBuilder } from 'discord.js'; // Asegúrate de importar SlashCommandBuilder
 import { getManualText } from '../../utils/manualProcessor.js';
 import { getAnswerFromManual } from '../../utils/qaService.js';
 
-export async function handleManualCommand(interaction, config) {
+// Define la data del comando
+export const data = new SlashCommandBuilder()
+    .setName('manual')
+    .setDescription('Busca información en el manual de procedimientos.')
+    .addStringOption(option =>
+        option.setName('pregunta')
+            .setDescription('Tu pregunta sobre el manual')
+            .setRequired(true));
+
+export async function execute(interaction, config) { // Cambiado a 'execute'
     await interaction.deferReply();
 
     const question = interaction.options.getString('pregunta');

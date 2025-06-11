@@ -1,7 +1,16 @@
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js'; // Asegúrate de importar SlashCommandBuilder
 import { checkIfPedidoExists } from '../../utils/googleSheets.js';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 
-export async function handleBuscarDriveCommand(interaction, sheetsInstance, config) {
+// Define la data del comando
+export const data = new SlashCommandBuilder()
+    .setName('buscar-drive')
+    .setDescription('Busca un número de pedido en Google Sheets y proporciona el enlace a la carpeta de Drive.')
+    .addStringOption(option =>
+        option.setName('pedido')
+            .setDescription('El número de pedido a buscar')
+            .setRequired(true));
+
+export async function execute(interaction, sheetsInstance, config) { // Cambiado a 'execute'
     if (interaction.channelId !== config.targetChannelIdBuscarCaso) {
         await interaction.reply({
             content: `❌ Este comando solo puede ser usado en el canal <#${config.targetChannelIdBuscarCaso}>.`,

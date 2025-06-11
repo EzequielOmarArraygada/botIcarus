@@ -9,12 +9,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
-// Estas se siguen importando en index.js si se usan para registrar comandos iniciales
-// o si se llaman directamente desde index.js en el futuro.
-// Las funciones que CONSTRUYEN los modales/select menus están en interactions/modals.js y interactions/selectMenus.js
-
-
 // --- Importaciones de utilidades ---
 import { initializeGoogleSheets, checkSheetForErrors, checkIfPedidoExists } from './utils/googleSheets.js';
 import { initializeGoogleDrive, findOrCreateDriveFolder, uploadFileToDrive, downloadFileFromDrive } from './utils/googleDrive.js';
@@ -24,6 +18,7 @@ import { getAnswerFromManual } from './utils/qaService.js';
 
 // --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
 // Asegúrate de importar TODAS las funciones de modales que uses
+import { buildFacturaAModal, buildCasoModal } from './interactions/modals.js';
 import { buildTipoSolicitudSelectMenu } from './interactions/selectMenus.js';
 // import { buildMyButton } from './interactions/buttons.js'; // Si tienes botones personalizados
 
@@ -37,86 +32,73 @@ import setupGuildMemberAdd from './events/guildMemberAdd.js'; // <-- Importamos 
 // --- Configuración del Cliente de Discord ---
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos, y para obtener displayName
-        GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate
-        GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes, incluyendo adjuntos
-        GatewayIntentBits.GuildMembers,   // <-- NECESARIO para el evento guildMemberAdd
-    ]
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent, // Necesario para acceder al contenido de los mensajes
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildMembers, // Necesario para el evento guildMemberAdd
+    ],
 });
 
+// Crear una nueva colección para almacenar los comandos
 client.commands = new Collection();
-
-// --- Manejo de Estado ---
+// Crear un mapa para almacenar datos pendientes específicos de usuario (ej. para modales)
 const userPendingData = new Map();
 
-
-// --- Inicializar APIs de Google ---
-let sheetsInstance;
-let driveInstance;
-try {
-    if (!config.googleCredentialsJson) {
-        console.error("Error CRÍTICO: La variable de entorno GOOGLE_CREDENTIALS_JSON no está configurada.");
-        process.exit(1);
-    }
-    sheetsInstance = initializeGoogleSheets(config.googleCredentialsJson);
-    driveInstance = initializeGoogleDrive(config.googleCredentialsJson);
-
-} catch (error) {
-    console.error("Error al inicializar APIs de Google:", error);
-    process.exit(1);
-}
-
-
-// --- Eventos del Bot de Discord ---
-client.once('ready', async () => {
-    console.log(`Bot logeado como ${client.user.tag}!`);
-
-    // --- Cargar el manual en memoria ---
-    if (config.manualDriveFileId && driveInstance) {
-        await loadAndCacheManual(driveInstance, config.manualDriveFileId);
-    } else {
-        console.warn("No se cargará el manual porque falta MANUAL_DRIVE_FILE_ID o la instancia de Drive no está disponible.");
-    }
-
-    console.log(`Conectado a Discord.`);
-    console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
-
-    // --- Iniciar la verificación periódica de errores en la hoja ---
-    // NOTA: Actualmente, la verificación de errores solo está implementada para la hoja principal de Casos (Solicitud BGH).
-    if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
-        console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos BGH.`);
-        // Llamar a la función importada y pasarle las dependencias necesarias
-        checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId);
-        setInterval(() => checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
-    } else {
-        console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
-    }
-
-    const __filename = fileURLToPath(import.meta.url);
+// Obtener la ruta base del directorio actual
+const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Cargar comandos de barra desde la nueva carpeta commands/ ---
-const commandsPath = path.join(__dirname, 'interactions', 'commands'); // <-- Nueva ruta
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+// --- Inicialización de Google Sheets y Drive ---
+let sheetsInstance;
+let driveInstance;
 
-for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    import(filePath)
-        .then(module => {
-            const command = module.default; // Asumiendo que cada comando exporta con `export default`
-            if ('data' in command && 'execute' in command) {
+// Usar una función asíncrona autoejecutable para manejar await al inicio
+(async () => {
+    try {
+        sheetsInstance = initializeGoogleSheets(config.googleCredentialsJson);
+        console.log("Google Sheets inicializado correctamente.");
+        driveInstance = initializeGoogleDrive(config.googleCredentialsJson);
+        console.log("Google Drive inicializado correctamente.");
+        await loadAndCacheManual(driveInstance, config.manualDriveFileId); // Cargar manual al inicio
+    } catch (error) {
+        console.error("Error crítico al inicializar Google APIs:", error);
+        process.exit(1); // Salir si las APIs no se pueden inicializar
+    }
+
+    // --- Cargar comandos dinámicamente ---
+    const commandsPath = path.join(__dirname, 'interactions', 'commands');
+    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+    for (const file of commandFiles) {
+        const filePath = path.join(commandsPath, file);
+        try {
+            // Importa el módulo dinámicamente
+            const commandModule = await import(filePath);
+
+            // Determina si es una exportación con nombre (data, execute) o exportación por defecto
+            const command = commandModule.default || commandModule; // Para manejar handleMisCasos.js que usa export default
+
+            if (command.data && typeof command.execute === 'function') {
                 client.commands.set(command.data.name, command);
                 console.log(`Comando cargado: /${command.data.name}`);
             } else {
                 console.warn(`[ADVERTENCIA] El comando en ${filePath} le falta una propiedad "data" o "execute" requerida.`);
             }
-        })
-        .catch(error => {
+        } catch (error) {
             console.error(`Error al cargar el comando ${filePath}:`, error);
-        });
-}
+        }
+    }
 
-});
+
+    // --- Verificación periódica de errores en Google Sheets ---
+    if (config.errorCheckIntervalMs && sheetsInstance && config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos) {
+        console.log(`Iniciando verificación periódica de errores en Casos BGH cada ${config.errorCheckIntervalMs / 1000} segundos.`);
+        setInterval(() => checkSheetForErrors(sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, client, config.targetChannelIdCasos), config.errorCheckIntervalMs);
+    } else {
+        console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
+    }
+})(); // Fin de la función asíncrona autoejecutable
 
 // --- Configurar Listeners de Eventos ---
 // Llama a las funciones de setup importadas y pásales las variables y funciones necesarias
@@ -135,6 +117,15 @@ setupInteractionCreate(
     config,
     sheetsInstance,
     driveInstance,
+    buildFacturaAModal,
+    buildTipoSolicitudSelectMenu,
+    buildCasoModal,
+    checkIfPedidoExists,
+    getAndreaniTracking,
+    findOrCreateDriveFolder,
+    uploadFileToDrive,
+    getManualText,
+    getAnswerFromManual
 );
 
 // --- Configurar Listener para Nuevos Miembros ---
@@ -148,7 +139,30 @@ console.log(`Paso 2: Token de Discord cargado (primeros 5 chars): ${config.disco
 client.login(config.discordToken).catch(err => {
     console.error("Paso 3: Error al conectar con Discord.", err);
     console.error("Paso 3: Detalles completos del error de login:", err);
-    process.exit(1);
+    process.exit(1); // Salir de la aplicación en caso de fallo de conexión
 });
 
-console.log("Paso 4: client.login() llamado. Esperando evento 'ready' o error.");
+client.once('ready', () => {
+    console.log(`Paso 4: ¡Bot ${client.user.tag} conectado a Discord!`);
+    console.log(`ID del bot: ${client.user.id}`);
+});
+
+client.on('error', error => {
+    console.error('Un error en el cliente de Discord ocurrió:', error);
+});
+
+process.on('unhandledRejection', error => {
+    console.error('Una promesa no manejada fue rechazada:', error);
+});
+
+process.on('SIGTERM', () => {
+    console.log('SIGTERM recibido. Cerrando el bot gracefully.');
+    client.destroy();
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT recibido. Cerrando el bot gracefully.');
+    client.destroy();
+    process.exit(0);
+});
