@@ -30,6 +30,8 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
      console.log("--- DEBUG QA SERVICE ---");
         console.log(`Pregunta del usuario: "${question}"`);
 
+        // PARA EL MANUAL
+
         // const prompt = `
         //    Eres un asistente experto y preciso, especializado en buscar información en el manual de procedimientos proporcionado.
         //    Tu objetivo es encontrar la respuesta a la pregunta del usuario BASÁNDOTE EXCLUSIVAMENTE en el "Contenido del Manual" que se te proporciona.

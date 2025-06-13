@@ -127,7 +127,6 @@ export async function uploadFileToDrive(driveInstance, folderId, attachment) {
              resource: fileMetadata, // Metadatos del archivo
              media: media,           // Datos del archivo (contenido)
              fields: 'id, name',     // Campos a retornar del archivo subido
-             // ensureRevisionUpload: true // Opcional: Forzar nueva versión si un archivo con el mismo nombre ya existe
          });
 
          console.log(`Archivo "${uploadedFile.data.name}" subido con éxito. ID de Drive: ${uploadedFile.data.id}`);
