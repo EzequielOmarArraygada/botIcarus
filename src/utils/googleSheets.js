@@ -184,7 +184,7 @@ export async function checkSheetForErrors(client, sheetsInstance, spreadsheetIdC
                 const tipoSolicitud = row[4] || 'N/A'; // Col E: Solicitud (índice 4)
                 const datosContacto = row[5] || 'N/A'; // Col F: Dirección/Telefono/Datos (índice 5)
                 // Col J: ERROR (índice 9) - ya lo tenemos en errorValue
-                // Col K: NOTIFICADO (índice 10) - ya lo tenemos en notifiedValue (sabemos que está vacío)
+                // Col K: NOTIFICADO (índice 10) - ya lo tenemos en notifiedValue
 
                 // --- Intentar encontrar el usuario de Discord por nombre ---
                 let mention = agenteName; // Por defecto, usar el nombre de la hoja si no encontramos al usuario

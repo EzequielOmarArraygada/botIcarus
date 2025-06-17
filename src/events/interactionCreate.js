@@ -1,7 +1,7 @@
 // Importa las funciones de interacciones y utilidades necesarias
-import { ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js'; // Necesario para el botón en el select menu handler
+import { ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js'; 
 import { buildFacturaAModal, buildCasoModal } from '../interactions/modals.js';
-import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js'; // Asegúrate de importar buildTipoSolicitudSelectMenu
+import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js'; 
 import { checkIfPedidoExists } from '../utils/googleSheets.js';
 import { getAndreaniTracking } from '../utils/andreani.js';
 import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
