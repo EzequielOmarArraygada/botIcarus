@@ -16,6 +16,10 @@ export default (client, userPendingData, config, driveInstance, findOrCreateDriv
             return;
         }
 
+        if (config.targetCategoryId && message.channel.parentId !== config.targetCategoryId) {
+    return; // Ignora el mensaje
+}
+
         const messageContentLower = message.content.toLowerCase();
 
         // --- Lógica para responder a preguntas sobre comandos en el canal de ayuda ---

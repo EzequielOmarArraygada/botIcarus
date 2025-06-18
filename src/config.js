@@ -26,6 +26,8 @@ const config = {
     geminiApiKey: process.env.GEMINI_API_KEY, //
     manualDriveFileId: process.env.MANUAL_DRIVE_FILE_ID,
 
+    targetCategoryId: process.env.TARGET_CATEGORY_ID,
+
 errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env.ERROR_CHECK_INTERVAL_MS) : (4 * 60 * 60 * 1000),
 
 };

@@ -46,6 +46,10 @@ export default (
     client.on('interactionCreate', async interaction => {
         if (interaction.user.bot) return; // Ignorar interacciones de bots
 
+        if (config.targetCategoryId && interaction.channel.parentId !== config.targetCategoryId) {
+    return; // Ignora la interacción
+}
+
         // --- Manejar Comandos de Barra (Slash Commands) ---
         if (interaction.isChatInputCommand()) {
             // Verifica si es el comando "/factura-a"
