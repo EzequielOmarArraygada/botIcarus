@@ -1,3 +1,4 @@
+import { getUserState, deleteUserState } from '../utils/stateManager.js';
 
 /**
  * Configura el listener para el evento messageCreate.
@@ -104,14 +105,14 @@ Lista de comandos:
         }
 
         const userId = message.author.id;
-        const pendingData = userPendingData.get(userId);
+        const pendingData = await getUserState(userId);
 
         // Verificar si el usuario está esperando adjuntos Y si el dato pendiente es de tipo 'facturaA'
         if (pendingData && pendingData.type === 'facturaA' && message.attachments.size > 0) {
             console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (Factura A). Procesando...`);
 
             // Eliminar al usuario del estado de espera inmediatamente
-            userPendingData.delete(userId);
+            await deleteUserState(userId);
 
             // --- Procesar y subir archivos a Google Drive ---
             let driveFolderLink = null;

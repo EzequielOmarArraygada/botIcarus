@@ -5,6 +5,8 @@ import { buildTipoSolicitudSelectMenu } from '../interactions/selectMenus.js';
 import { checkIfPedidoExists } from '../utils/googleSheets.js';
 import { getAndreaniTracking } from '../utils/andreani.js';
 import { findOrCreateDriveFolder, uploadFileToDrive } from '../utils/googleDrive.js'; // Necesario para el modal submit handler de Factura A
+import { setUserState, getUserState, deleteUserState } from '../utils/stateManager.js';
+
 
 
 /**
@@ -69,7 +71,7 @@ export default (
                     } else {
                          console.error('Error al mostrar modal después de responder/deferir.');
                     }
-                    userPendingData.delete(interaction.user.id);
+                    await deleteUserState(interaction.user.id);
                 }
             } else if (interaction.commandName === 'tracking') { // --- MANEJADOR PARA /tracking ---
                  console.log(`Comando /tracking recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
@@ -196,7 +198,7 @@ export default (
                     const actionRow = buildTipoSolicitudSelectMenu(); // Usamos la función importada
 
                     // Guardar el estado pendiente del usuario
-                    userPendingData.set(interaction.user.id, { type: 'caso', paso: 1 });
+                    await setUserState(interaction.user.id, { type: 'caso', paso: 1 });
                     console.log(`Usuario ${interaction.user.tag} puesto en estado pendiente (caso, paso 1).`);
 
                     await interaction.reply({
@@ -213,7 +215,7 @@ export default (
                      } else {
                          console.error('Error al mostrar select menu después de responder/deferir.');
                      }
-                    userPendingData.delete(interaction.user.id);
+                    await deleteUserState(interaction.user.id);
                 }
 
             } else if (interaction.commandName === 'buscar-caso') { // --- MANEJADOR PARA /buscar-caso ---
@@ -396,13 +398,13 @@ export default (
                 console.log(`Selección en Select Menu 'casoTipoSolicitudSelect' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
                 const userId = interaction.user.id;
-                const pendingData = userPendingData.get(userId);
+                const pendingData = await getUserState(userId);
 
                 if (pendingData && pendingData.type === 'caso' && pendingData.paso === 1) {
                     const selectedTipoSolicitud = interaction.values[0];
                     console.log(`Tipo de Solicitud seleccionado: ${selectedTipoSolicitud}`);
 
-                    userPendingData.set(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud, interactionId: interaction.id });
+                    await setUserState(userId, { type: 'caso', paso: 2, tipoSolicitud: selectedTipoSolicitud, interactionId: interaction.id });
                     console.log(`Estado pendiente del usuario ${interaction.user.tag} actualizado (caso, paso 2, tipo ${selectedTipoSolicitud}).`);
 
 
@@ -429,7 +431,7 @@ export default (
                          } catch (fuError) {
                             console.error('Error adicional al intentar followUp después de fallo de update:', fuError);
                          }
-                        userPendingData.delete(userId);
+                        await deleteUserState(userId);
                     }
 
                 } else {
@@ -448,7 +450,7 @@ export default (
                              console.error('Error adicional al intentar followUp después de fallo de update:', fuError);
                           }
                      }
-                     userPendingData.delete(userId);
+                     await deleteUserState(userId);
                 }
             }
         }
@@ -459,7 +461,7 @@ export default (
                 console.log(`Clic en botón 'completeCasoDetailsButton' recibido por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 
                 const userId = interaction.user.id;
-                const pendingData = userPendingData.get(userId);
+                const pendingData = await getUserState(userId);
 
                 if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
 
@@ -506,7 +508,7 @@ export default (
                                   }
                              }
                          }
-                        userPendingData.delete(userId);
+                        await deleteUserState(userId);
                     }
 
                 } else {
@@ -525,7 +527,7 @@ export default (
                              console.error('Error adicional al intentar followUp después de fallo de update:', fuError);
                           }
                      }
-                     userPendingData.delete(userId);
+                     await deleteUserState(userId);
                 }
             }
         }
@@ -560,7 +562,7 @@ export default (
                            if (isDuplicate) {
                                 console.log(`Pedido ${pedidoNumberToCheckFacA} ya existe. Cancelando registro.`);
                                 await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckFacA}** ya se encuentra registrado en la hoja de Factura A.`, ephemeral: true });
-                                userPendingData.delete(interaction.user.id);
+                                await deleteUserState(interaction.user.id);
                                 return;
                            }
                            console.log(`Pedido ${pedidoNumberToCheckFacA} no encontrado como duplicado. Procediendo a registrar.`);
@@ -610,7 +612,7 @@ export default (
                           sheetSuccess = true;
 
                           if (config.parentDriveFolderId) {
-                               userPendingData.set(interaction.user.id, {
+                               await setUserState(interaction.user.id, {
                                     type: 'facturaA',
                                     pedido: pedido,
                                     timestamp: new Date()
@@ -634,7 +636,7 @@ export default (
                          }
                      } else {
                          confirmationMessage += '❌ Solicitud de Factura A no pudo cargarse en Google Sheets (configuración incompleta).';
-                         userPendingData.delete(interaction.user.id);
+                         await deleteUserState(interaction.user.id);
                      }
 
                      await interaction.editReply({ content: confirmationMessage, ephemeral: true });
@@ -658,7 +660,7 @@ export default (
 
                      await interaction.editReply({ content: errorMessage, ephemeral: true });
                      console.log('Mensaje de error de sumisión de modal Factura A enviado.');
-                     userPendingData.delete(interaction.user.id);
+                     await deleteUserState(interaction.user.id);
                  }
 
             } else if (interaction.customId === 'casoModal') { // Manejador para la sumisión del modal de casos
@@ -667,7 +669,7 @@ export default (
                  await interaction.deferReply({ ephemeral: true });
 
                  const userId = interaction.user.id;
-                 const pendingData = userPendingData.get(userId);
+                 const pendingData = await getUserState(userId);
 
                  if (pendingData && pendingData.type === 'caso' && pendingData.paso === 2 && pendingData.tipoSolicitud) {
 
@@ -692,7 +694,7 @@ export default (
                                if (isDuplicate) {
                                     console.log(`Pedido ${pedidoNumberToCheckCaso} ya existe. Cancelando registro.`);
                                     await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckCaso}** ya se encuentra registrado en la hoja de Casos.`, ephemeral: true });
-                                    userPendingData.delete(userId);
+                                    await deleteUserState(userId);
                                     return;
                                }
                                console.log(`Pedido ${pedidoNumberToCheckCaso} no encontrado como duplicado. Procediendo a registrar.`);
@@ -774,7 +776,7 @@ export default (
                          await interaction.editReply({ content: errorMessage, ephemeral: true });
                          console.log('Mensaje de error de sumisión de modal Caso enviado.');
                      } finally {
-                         userPendingData.delete(userId);
+                         await deleteUserState(userId);
                          console.log(`Estado pendiente del usuario ${interaction.user.tag} limpiado.`);
                      }
 
@@ -790,7 +792,7 @@ export default (
                              console.error('Error adicional al intentar followUp después de fallo de editReply:', fuError);
                           }
                      }
-                     userPendingData.delete(userId);
+                     await deleteUserState(userId);
                  }
             }
         }
