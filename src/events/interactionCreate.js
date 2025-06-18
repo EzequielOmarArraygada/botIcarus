@@ -13,7 +13,6 @@ import { setUserState, getUserState, deleteUserState } from '../utils/stateManag
  * Configura el listener para el evento interactionCreate.
  * Este manejador procesa comandos de barra, botones, select menus y sumisiones de modales.
  * @param {object} client - Instancia del cliente de Discord.
- * @param {Map} userPendingData - Mapa para datos pendientes del usuario.
  * @param {object} config - Objeto de configuración con IDs de canales, IDs de hojas, rangos, etc.
  * @param {object} sheetsInstance - Instancia de la API de Google Sheets.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
@@ -29,7 +28,6 @@ import { setUserState, getUserState, deleteUserState } from '../utils/stateManag
  */
 export default (
     client,
-    userPendingData,
     config,
     sheetsInstance,
     driveInstance,

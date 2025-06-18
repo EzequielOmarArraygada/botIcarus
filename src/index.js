@@ -12,24 +12,23 @@ import { loadAndCacheManual, getManualText } from './utils/manualProcessor.js';
 import { getAnswerFromManual } from './utils/qaService.js';
 
 // --- Importaciones de interacciones (funciones de construcción de modales y select menus) ---
-// Asegúrate de importar TODAS las funciones de modales que uses
 import { buildFacturaAModal, buildCasoModal} from './interactions/modals.js';
 import { buildTipoSolicitudSelectMenu } from './interactions/selectMenus.js';
-// import { buildMyButton } from './interactions/buttons.js'; // Si tienes botones personalizados
 
 
 // --- Importaciones de manejadores de eventos ---
 import setupMessageCreate from './events/messageCreate.js';
 import setupInteractionCreate from './events/interactionCreate.js';
-import setupGuildMemberAdd from './events/guildMemberAdd.js'; // <-- Importamos el nuevo manejador
+// ELIMINADO: import setupGuildMemberAdd from './events/guildMemberAdd.js';
 
 
 // --- Configuración del Cliente de Discord ---
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos, y para obtener displayName
-        GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate
-        GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes, incluyendo adjuntos
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        // ELIMINADO: GatewayIntentBits.GuildMembers ya no es necesario
     ]
 });
 
@@ -63,17 +62,14 @@ client.once('ready', async () => {
     }
 
     console.log(`Conectado a Discord.`);
-    console.log('Lógica de establecimiento automático de permisos de comandos por canal omitida.');
 
     // --- Iniciar la verificación periódica de errores en la hoja ---
-    // NOTA: Actualmente, la verificación de errores solo está implementada para la hoja principal de Casos (Solicitud BGH).
-    if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos && config.guildId) { // Usamos las variables específicas de Casos BGH
-        console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos BGH.`);
-        // Llamar a la función importada y pasarle las dependencias necesarias
+    if (config.spreadsheetIdCasos && config.sheetRangeCasosRead && config.targetChannelIdCasos && config.guildId) {
+        console.log(`Iniciando verificación periódica de errores cada ${config.errorCheckIntervalMs / 1000} segundos en la hoja de Casos.`);
         checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId);
         setInterval(() => checkSheetForErrors(client, sheetsInstance, config.spreadsheetIdCasos, config.sheetRangeCasosRead, config.targetChannelIdCasos, config.guildId), config.errorCheckIntervalMs);
     } else {
-        console.warn("La verificación periódica de errores en la hoja de Casos BGH no se iniciará debido a la falta de configuración.");
+        console.warn("La verificación periódica de errores no se iniciará debido a la falta de configuración.");
     }
 });
 
@@ -87,6 +83,7 @@ setupMessageCreate(
     uploadFileToDrive
 );
 
+// CORREGIDO: Se eliminó el parámetro 'userPendingData' que ya no se usa.
 setupInteractionCreate(
     client,
     config,
@@ -103,15 +100,11 @@ setupInteractionCreate(
     getAnswerFromManual
 );
 
+// ELIMINADO: La llamada a setupGuildMemberAdd ya no es necesaria.
+
 
 // --- Conectar el Bot a Discord ---
-console.log("Paso 1: Llegamos a la sección de conexión.");
-console.log(`Paso 2: Token de Discord cargado (primeros 5 chars): ${config.discordToken ? config.discordToken.substring(0, 5) + '...' : 'TOKEN NO CARGADO'}`);
-
 client.login(config.discordToken).catch(err => {
-    console.error("Paso 3: Error al conectar con Discord.", err);
-    console.error("Paso 3: Detalles completos del error de login:", err);
+    console.error("Error al conectar con Discord.", err);
     process.exit(1);
 });
-
-console.log("Paso 4: client.login() llamado. Esperando evento 'ready' o error.");
