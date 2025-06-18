@@ -82,7 +82,6 @@ client.once('ready', async () => {
 // Llama a las funciones de setup importadas y pásales las variables y funciones necesarias
 setupMessageCreate(
     client,
-    userPendingData,
     config,
     driveInstance,
     findOrCreateDriveFolder,
@@ -91,7 +90,6 @@ setupMessageCreate(
 
 setupInteractionCreate(
     client,
-    userPendingData,
     config,
     sheetsInstance,
     driveInstance,
