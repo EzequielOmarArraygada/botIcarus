@@ -30,7 +30,6 @@ const client = new Client({
         GatewayIntentBits.Guilds,         // Necesario para reconocer servidores y comandos, y para obtener displayName
         GatewayIntentBits.GuildMessages,  // Necesario para el listener messageCreate
         GatewayIntentBits.MessageContent, // CRUCIAL para leer el contenido de mensajes, incluyendo adjuntos
-        GatewayIntentBits.GuildMembers,   // <-- NECESARIO para el evento guildMemberAdd
     ]
 });
 
@@ -103,9 +102,6 @@ setupInteractionCreate(
     getManualText,
     getAnswerFromManual
 );
-
-// --- Configurar Listener para Nuevos Miembros ---
-setupGuildMemberAdd(client, config); // <-- Llamamos al nuevo manejador y le pasamos client y config
 
 
 // --- Conectar el Bot a Discord ---
