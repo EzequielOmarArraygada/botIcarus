@@ -34,9 +34,6 @@ const client = new Client({
     ]
 });
 
-// --- Manejo de Estado ---
-const userPendingData = new Map();
-
 
 // --- Inicializar APIs de Google ---
 let sheetsInstance;
