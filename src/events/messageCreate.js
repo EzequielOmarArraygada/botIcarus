@@ -1,14 +1,16 @@
 import { getUserState, deleteUserState } from '../utils/stateManager.js';
+import { getManualText } from '../utils/manualProcessor.js'; // Necesario para la lógica del manual
+import { getAnswerFromManual } from '../utils/qaService.js'; // Necesario para la lógica del manual
 
 /**
  * Configura el listener para el evento messageCreate.
  * @param {object} client - Instancia del cliente de Discord.
- * @param {Map} userPendingData - Mapa para datos pendientes del usuario.
  * @param {object} config - Objeto de configuración con IDs de canales, IDs de hojas, rangos, etc.
  * @param {object} driveInstance - Instancia de la API de Google Drive.
  * @param {function} findOrCreateDriveFolder - Función de utilidad de Drive.
  * @param {function} uploadFileToDrive - Función de utilidad de Drive.
  */
+
 export default (client, userPendingData, config, driveInstance, findOrCreateDriveFolder, uploadFileToDrive) => {
     client.on('messageCreate', async message => {
         // Ignorar mensajes de bots
@@ -114,41 +116,55 @@ Lista de comandos:
         if (pendingData && pendingData.type === 'facturaA' && message.attachments.size > 0) {
             console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (${pendingData.type}). Procesando...`);
 
-            // *** Estos logs de depuración son útiles, puedes mantenerlos por ahora ***
+            // DEBUG: Confirmar que targetDriveFolderId tiene el valor correcto
             console.log(`[DEBUG - messageCreate] pendingData.targetDriveFolderId: ${pendingData.targetDriveFolderId}`);
-            // console.log(`[DEBUG - messageCreate] config.parentDriveFolderId: ${config.parentDriveFolderId}`); // Este ya sabemos que será 'undefined' aquí, puedes quitarlo.
 
             if (!pendingData.targetDriveFolderId) {
-                console.log("PARENT_DRIVE_FOLDER_ID no configurado. No se subirán archivos adjuntos.");
+                console.log("PARENT_DRIVE_FOLDER_ID no configurado en el estado del usuario. No se subirán archivos adjuntos.");
                 await message.reply({ content: "❌ Error: No se pudo determinar la carpeta de destino en Google Drive. Por favor, contacta a un administrador.", ephemeral: true });
-                // No retornar aquí si quieres que el deleteUserState se ejecute.
-                // Podrías retornar si quieres detener el procesamiento en este punto de error crítico.
-                return; // Añadido un return para detener el flujo en caso de error.
+                await deleteUserState(userId); // Limpiar el estado para evitar bucles.
+                return; // Detener el procesamiento aquí si falta el ID de la carpeta.
             }
 
             try {
+                // Iterar sobre todos los adjuntos del mensaje
                 for (const [attachmentId, attachment] of message.attachments) {
                     console.log(`Procesando adjunto: ${attachment.name}, URL: ${attachment.url}`);
 
-                    // AQUI ES DONDE SE LLAMA A uploadFileToDrive
+                    // Llama a uploadFileToDrive con el driveInstance y el ID de la carpeta padre
+                    // uploadFileToDrive ya es una función válida debido a la corrección de la firma
                     const uploadedFile = await uploadFileToDrive(driveInstance, attachment, pendingData.pedido, pendingData.targetDriveFolderId);
                     console.log(`Adjunto ${attachment.name} subido a Drive con ID: ${uploadedFile.id}`);
                 }
 
                 await message.reply({ content: `✅ Archivos para el pedido **${pendingData.pedido}** subidos a Google Drive correctamente.`, ephemeral: true });
                 console.log(`Archivos del pedido ${pendingData.pedido} subidos a Drive y confirmación enviada.`);
-                await deleteUserState(userId);
+                await deleteUserState(userId); // Limpiar el estado después de subir los archivos
                 console.log(`Estado pendiente del usuario ${message.author.tag} limpiado para el pedido ${pendingData.pedido}.`);
 
             } catch (error) {
                 console.error(`Error al subir adjuntos para el pedido ${pendingData.pedido}:`, error);
                 let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingData.pedido} (Factura A).`;
-                // ... (tu manejo de errores)
+                // Manejo de errores más detallado para la API de Google
+                 if (error.response && error.response.data) {
+                      if (error.response.data.error && error.response.data.error.message) {
+                           errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
+                      } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
+                           errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
+                      } else {
+                           errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
+                      }
+                 } else {
+                      errorMessage += ` Detalles: ${error.message}`;
+                 }
+                 errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
+
                 await message.reply({ content: errorMessage, ephemeral: true });
                 console.log('Mensaje de error de subida de archivos enviado.');
+                // Aquí, he decidido no limpiar el estado en caso de error de subida para que el usuario pueda reintentar.
+                // Si prefieres que se limpie, puedes añadir `await deleteUserState(userId);` aquí.
             }
 
-        } else if (message.attachments.size > 0) {
              console.log(`Mensaje con adjuntos recibido de ${message.author.tag}, pero no está en estado de espera. Ignorando adjuntos.`);
         } else {
             // Lógica para el manual si no hay adjuntos y no hay estado pendiente
