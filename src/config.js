@@ -32,6 +32,10 @@ errorCheckIntervalMs: process.env.ERROR_CHECK_INTERVAL_MS ? parseInt(process.env
 
 };
 
+console.log('[DEBUG] Verificando PARENT_DRIVE_FOLDER_ID al cargar config.js...');
+console.log(`[DEBUG] Valor leído de process.env.PARENT_DRIVE_FOLDER_ID: ${process.env.PARENT_DRIVE_FOLDER_ID}`);
+// Este log nos dirá si la variable está llegando desde el entorno o no.
+
 // Validaciones básicas (puedes añadir más según sea necesario)
 if (!config.discordToken) {
     console.error("Error CRÍTICO: La variable de entorno DISCORD_TOKEN no está configurada.");
