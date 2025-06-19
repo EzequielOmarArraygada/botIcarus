@@ -11,7 +11,7 @@ import { getAnswerFromManual } from '../utils/qaService.js'; // Necesario para l
  * @param {function} uploadFileToDrive - Función de utilidad de Drive.
  */
 
-export default (client, userPendingData, config, driveInstance, findOrCreateDriveFolder, uploadFileToDrive) => {
+export default (client, config, driveInstance, findOrCreateDriveFolder, uploadFileToDrive) => {
     client.on('messageCreate', async message => {
         // Ignorar mensajes de bots
         if (message.author.bot) {
