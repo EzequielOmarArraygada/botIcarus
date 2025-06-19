@@ -539,132 +539,68 @@ export default (
         if (interaction.isModalSubmit()) {
             // Verifica si la sumisión es de nuestro modal de Factura A (usando el customId)
             if (interaction.customId === 'facturaAModal') {
-                 console.log(`Submisión del modal 'facturaAModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
+                await interaction.deferReply({ ephemeral: true }); // Deferir para dar tiempo
+                const pedido = interaction.fields.getTextInputValue('pedidoInput');
+                const caso = interaction.fields.getTextInputValue('casoInput');
+                const email = interaction.fields.getTextInputValue('emailInput');
+                const descripcion = interaction.fields.getTextInputValue('descripcionInput');
 
-                 await interaction.deferReply({ ephemeral: true });
+                const userId = interaction.user.id;
 
-                 // !!! RECUPERAR DATOS DE LOS CAMPOS DEL MODAL DE FACTURA A !!!
-                 const pedido = interaction.fields.getTextInputValue('pedidoInput');
-                 const caso = interaction.fields.getTextInputValue('casoInput');
-                 const email = interaction.fields.getTextInputValue('emailInput');
-                 const descripcion = interaction.fields.getTextInputValue('descripcionInput');
+                try {
+                    const pedidoExists = await checkIfPedidoExists(sheetsInstance, config.spreadsheetIdFacA, config.sheetRangeFacA, pedido);
 
-                 console.log(`Datos del modal Factura A - Pedido: ${pedido}, Caso: ${caso}, Email: ${email}, Descripción: ${descripcion}`);
+                    if (pedidoExists) {
+                        await interaction.editReply({ content: `❌ El número de pedido **${pedido}** ya ha sido registrado para una solicitud de Factura A.`, ephemeral: true });
+                        return;
+                    }
 
-                 // --- VERIFICAR DUPLICADO ANTES DE ESCRIBIR ---
-                 const sheetRangeToCheckFacA = config.sheetRangeFacA.split('!')[0] + '!A:Z';
-                 const spreadsheetIdToCheckFacA = config.spreadsheetIdFacA;
-                 const pedidoNumberToCheckFacA = pedido;
+                    const timestamp = new Date().toLocaleString('es-AR', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit',
+                        hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
+                    }).replace(/\//g, '-');
 
-                 if (spreadsheetIdToCheckFacA && sheetRangeToCheckFacA) {
-                      console.log(`Verificando duplicado para pedido ${pedidoNumberToCheckFacA} en ${spreadsheetIdToCheckFacA}, rango ${sheetRangeToCheckFacA}...`);
-                      try {
-                           const isDuplicate = await checkIfPedidoExists(sheetsInstance, spreadsheetIdToCheckFacA, sheetRangeToCheckFacA, pedidoNumberToCheckFacA);
+                    const rowData = [pedido, timestamp, `#${caso}`, email, descripcion];
 
-                           if (isDuplicate) {
-                                console.log(`Pedido ${pedidoNumberToCheckFacA} ya existe. Cancelando registro.`);
-                                await interaction.editReply({ content: `❌ El número de pedido **${pedidoNumberToCheckFacA}** ya se encuentra registrado en la hoja de Factura A.`, ephemeral: true });
-                                await deleteUserState(interaction.user.id);
-                                return;
-                           }
-                           console.log(`Pedido ${pedidoNumberToCheckFacA} no encontrado como duplicado. Procediendo a registrar.`);
+                    console.log("Datos a escribir en Sheet (Factura A):", rowData);
+                    await sheetsInstance.spreadsheets.values.append({
+                        spreadsheetId: config.spreadsheetIdFacA,
+                        range: config.sheetRangeFacA,
+                        valueInputOption: 'USER_ENTERED',
+                        resource: {
+                            values: [rowData],
+                        },
+                    });
+                    console.log("Datos de Sheet (Factura A) agregados correctamente.");
 
-                      } catch (checkError) {
-                           console.error('Error durante la verificación de duplicado (Factura A):', checkError);
-                           await interaction.editReply({ content: `⚠️ Hubo un error al verificar si el pedido ya existe. Se intentará registrar de todos modos. Detalles: ${checkError.message}`, ephemeral: true });
-                      }
-                 } else {
-                     console.warn('Configuración incompleta para verificar duplicados (Factura A). Saltando verificación.');
-                 }
-                 // --- FIN VERIFICACIÓN DUPLICADO ---
+                    // *** ESTE ES EL LUGAR EXACTO DONDE VA LA MODIFICACIÓN ***
+                    await setUserState(userId, {
+                        type: 'facturaA',
+                        pedido: pedido,
+                        targetChannelId: config.targetChannelIdFacA, // Asegúrate de que esto esté definido si lo usas
+                        targetDriveFolderId: config.parentDriveFolderId, // <-- AÑADIR ESTO AQUÍ
+                        // Puedes añadir más datos relevantes aquí si los necesitas en messageCreate
+                    });
 
+                    await interaction.editReply({
+                        content: `✅ Solicitud de Factura A para el pedido **${pedido}** registrada. Por favor, **sube los archivos adjuntos (PDFs/imágenes)** correspondientes a este pedido directamente a este chat.`,
+                        ephemeral: true
+                    });
+                    console.log(`Usuario ${interaction.user.tag} (ID: ${userId}) puesto en estado de espera de adjuntos para pedido ${pedido} (Factura A).`);
+                    console.log("Confirmación de solicitud de Factura A enviada.");
 
-                 const fechaHoraActual = new Date();
-                 const fechaHoraFormateada = fechaHoraActual.toLocaleString('es-AR', {
-                     year: 'numeric', month: '2-digit', day: '2-digit',
-                     hour: '2-digit', minute: '2-digit', second: '2-digit',
-                     hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
-                 }).replace(/\//g, '-');
-
-
-                 const rowData = [
-                     pedido,
-                     fechaHoraFormateada,
-                     `#${caso}`,
-                     email,
-                     descripcion
-                 ];
-
-                 console.log('Datos a escribir en Sheet (Factura A):', rowData);
-
-                 // --- Escribir en Google Sheets (Factura A) y Poner al usuario en estado de espera de archivos ---
-                 let sheetSuccess = false;
-
-                 try {
-                     if (config.spreadsheetIdFacA && config.sheetRangeFacA) {
-                          console.log('Intentando escribir en Google Sheets (Factura A)...');
-                          await sheetsInstance.spreadsheets.values.append({
-                              spreadsheetId: config.spreadsheetIdFacA,
-                              range: config.sheetRangeFacA,
-                              valueInputOption: 'RAW',
-                              insertDataOption: 'INSERT_ROWS',
-                              resource: { values: [rowData] },
-                          });
-                          console.log('Datos de Sheet (Factura A) agregados correctamente.');
-                          sheetSuccess = true;
-
-                          if (config.parentDriveFolderId) {
-                               await setUserState(interaction.user.id, {
-                                    type: 'facturaA',
-                                    pedido: pedido,
-                                    timestamp: new Date()
-                               });
-                               console.log(`Usuario ${interaction.user.tag} (ID: ${interaction.user.id}) puesto en estado de espera de adjuntos para pedido ${pedido} (Factura A).`);
-                          } else {
-                               console.warn('PARENT_DRIVE_FOLDER_ID no configurado. No se pondrá al usuario en estado de espera de adjuntos para Factura A.');
-                          }
-
-                     } else {
-                          console.warn('Variables de Google Sheets (Factura A) no configuradas. Saltando escritura en Sheet y estado de espera para Factura A.');
-                     }
-
-                     let confirmationMessage = '';
-                     if (sheetSuccess) {
-                         confirmationMessage += '✅ Solicitud de Factura A cargada correctamente en Google Sheets.';
-                         if (config.parentDriveFolderId) {
-                              confirmationMessage += '\nPor favor, envía los archivos adjuntos para esta solicitud en un **mensaje separado** aquí mismo en este canal.';
-                         } else {
-                              confirmationMessage += '\n⚠️ La carga de archivos adjuntos a Google Drive no está configurada en el bot para Factura A.';
-                         }
-                     } else {
-                         confirmationMessage += '❌ Solicitud de Factura A no pudo cargarse en Google Sheets (configuración incompleta).';
-                         await deleteUserState(interaction.user.id);
-                     }
-
-                     await interaction.editReply({ content: confirmationMessage, ephemeral: true });
-                     console.log('Confirmación de solicitud de Factura A enviada.');
-
-                 } catch (error) {
-                     console.error('Error general durante el procesamiento de la sumisión del modal (Factura A Sheets):', error);
-                     let errorMessage = '❌ Hubo un error al procesar tu solicitud de Factura A.';
-                      if (error.response && error.response.data) {
-                           if (error.response.data.error && error.response.data.error.message) {
-                                errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
-                           } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
-                                errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
-                           } else {
-                                errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
-                           }
-                      } else {
-                           errorMessage += ` Detalles: ${error.message}`;
-                      }
-                     errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
-
-                     await interaction.editReply({ content: errorMessage, ephemeral: true });
-                     console.log('Mensaje de error de sumisión de modal Factura A enviado.');
-                     await deleteUserState(interaction.user.id);
-                 }
-
+                } catch (error) {
+                    console.error("Error al procesar la sumisión del modal de Factura A:", error);
+                    let errorMessage = '❌ Hubo un error al procesar tu solicitud de Factura A.';
+                    if (error.message.includes('Sheet')) {
+                        errorMessage += ' Asegúrate de que las credenciales de Google Sheets y los IDs de hoja/rango sean correctos.';
+                    }
+                    await interaction.editReply({ content: errorMessage, ephemeral: true });
+                    console.log('Mensaje de error de sumisión de modal Factura A enviado.');
+                } finally {
+                    // No borramos el estado aquí, se borrará después de que suban los archivos.
+                }
             } else if (interaction.customId === 'casoModal') { // Manejador para la sumisión del modal de casos
                  console.log(`Submisión del modal 'casoModal' recibida por ${interaction.user.tag} (ID: ${interaction.user.id}).`);
 

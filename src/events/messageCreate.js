@@ -137,7 +137,7 @@ Lista de comandos:
 
                 const uploadPromises = Array.from(message.attachments.values()).map(attachment =>
                     // Usar la función importada y pasar la instancia de drive
-                    uploadFileToDrive(driveInstance, folderId, attachment) // <-- Pasar driveInstance
+                    uploadFileToDrive(driveInstance, attachment, pendingData.pedido, pendingData.targetDriveFolderId) // <-- Pasar driveInstance
                 );
 
                 const uploadedFiles = await Promise.all(uploadPromises);

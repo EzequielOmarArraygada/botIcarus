@@ -28,8 +28,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        // ELIMINADO: GatewayIntentBits.GuildMembers ya no es necesario
-    ]
+        GatewayIntentBits.GuildMembers,    ]
 });
 
 

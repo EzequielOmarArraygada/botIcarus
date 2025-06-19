@@ -49,6 +49,10 @@ if (!config.googleCredentialsJson) {
     process.exit(1);
 }
 
+if (!config.parentDriveFolderId) {
+    console.warn("Advertencia: PARENT_DRIVE_FOLDER_ID no configurado. La subida de archivos a Drive podría no funcionar.");
+}
+
 if (!config.geminiApiKey) {
     console.warn("Advertencia: GEMINI_API_KEY no configurada. El comando del manual no funcionará.");
 }
