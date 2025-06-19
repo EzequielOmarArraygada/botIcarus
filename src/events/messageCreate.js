@@ -114,36 +114,36 @@ Lista de comandos:
         if (pendingData && pendingData.type === 'facturaA' && message.attachments.size > 0) {
             console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (${pendingData.type}). Procesando...`);
 
-            // *** AÑADE ESTOS LOGS DE DEPURACIÓN ***
+            // *** Estos logs de depuración son útiles, puedes mantenerlos por ahora ***
             console.log(`[DEBUG - messageCreate] pendingData.targetDriveFolderId: ${pendingData.targetDriveFolderId}`);
-            console.log(`[DEBUG - messageCreate] config.parentDriveFolderId: ${config.parentDriveFolderId}`);
+            // console.log(`[DEBUG - messageCreate] config.parentDriveFolderId: ${config.parentDriveFolderId}`); // Este ya sabemos que será 'undefined' aquí, puedes quitarlo.
 
             if (!pendingData.targetDriveFolderId) {
                 console.log("PARENT_DRIVE_FOLDER_ID no configurado. No se subirán archivos adjuntos.");
                 await message.reply({ content: "❌ Error: No se pudo determinar la carpeta de destino en Google Drive. Por favor, contacta a un administrador.", ephemeral: true });
-                // No retornar aquí, para que el deleteUserState se ejecute si quieres limpiar el estado después de este error
+                // No retornar aquí si quieres que el deleteUserState se ejecute.
+                // Podrías retornar si quieres detener el procesamiento en este punto de error crítico.
+                return; // Añadido un return para detener el flujo en caso de error.
             }
 
             try {
-                // Iterar sobre todos los adjuntos del mensaje
                 for (const [attachmentId, attachment] of message.attachments) {
                     console.log(`Procesando adjunto: ${attachment.name}, URL: ${attachment.url}`);
 
-                    // Llama a uploadFileToDrive con el driveInstance y el ID de la carpeta padre
-                    // Asegúrate que uploadFileToDrive esté disponible en este scope
-                    const uploadedFile = await uploadFileToDrive(driveInstance, attachment, pendingData.pedido, pendingData.targetDriveFolderId); // Asegúrate de que pendingData.targetDriveFolderId es el parámetro correcto
+                    // AQUI ES DONDE SE LLAMA A uploadFileToDrive
+                    const uploadedFile = await uploadFileToDrive(driveInstance, attachment, pendingData.pedido, pendingData.targetDriveFolderId);
                     console.log(`Adjunto ${attachment.name} subido a Drive con ID: ${uploadedFile.id}`);
                 }
 
                 await message.reply({ content: `✅ Archivos para el pedido **${pendingData.pedido}** subidos a Google Drive correctamente.`, ephemeral: true });
                 console.log(`Archivos del pedido ${pendingData.pedido} subidos a Drive y confirmación enviada.`);
-                await deleteUserState(userId); // Limpiar el estado después de subir los archivos
+                await deleteUserState(userId);
                 console.log(`Estado pendiente del usuario ${message.author.tag} limpiado para el pedido ${pendingData.pedido}.`);
 
             } catch (error) {
                 console.error(`Error al subir adjuntos para el pedido ${pendingData.pedido}:`, error);
                 let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingData.pedido} (Factura A).`;
-                // ... (tu manejo de errores de subida actual)
+                // ... (tu manejo de errores)
                 await message.reply({ content: errorMessage, ephemeral: true });
                 console.log('Mensaje de error de subida de archivos enviado.');
             }

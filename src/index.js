@@ -79,7 +79,7 @@ setupMessageCreate(
     config,
     driveInstance,
     findOrCreateDriveFolder,
-    uploadFileToDrive
+    uploadFileToDrive,
 );
 
 // CORREGIDO: Se eliminó el parámetro 'userPendingData' que ya no se usa.
