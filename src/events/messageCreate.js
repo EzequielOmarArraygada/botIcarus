@@ -111,76 +111,39 @@ Lista de comandos:
         const userId = message.author.id;
         const pendingData = await getUserState(userId);
 
-        // Verificar si el usuario está esperando adjuntos Y si el dato pendiente es de tipo 'facturaA'
         if (pendingData && pendingData.type === 'facturaA' && message.attachments.size > 0) {
-            console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (Factura A). Procesando...`);
+            console.log(`Usuario ${message.author.tag} está esperando adjuntos para el pedido ${pendingData.pedido} (${pendingData.type}). Procesando...`);
 
-            // Eliminar al usuario del estado de espera inmediatamente
-            await deleteUserState(userId);
+            // *** AÑADE ESTOS LOGS DE DEPURACIÓN ***
+            console.log(`[DEBUG - messageCreate] pendingData.targetDriveFolderId: ${pendingData.targetDriveFolderId}`);
+            console.log(`[DEBUG - messageCreate] config.parentDriveFolderId: ${config.parentDriveFolderId}`);
 
-            // --- Procesar y subir archivos a Google Drive ---
-            let driveFolderLink = null;
+            if (!pendingData.targetDriveFolderId) {
+                console.log("PARENT_DRIVE_FOLDER_ID no configurado. No se subirán archivos adjuntos.");
+                await message.reply({ content: "❌ Error: No se pudo determinar la carpeta de destino en Google Drive. Por favor, contacta a un administrador.", ephemeral: true });
+                // No retornar aquí, para que el deleteUserState se ejecute si quieres limpiar el estado después de este error
+            }
 
             try {
-                if (!config.parentDriveFolderId) { // Usamos config.parentDriveFolderId
-                     console.warn("PARENT_DRIVE_FOLDER_ID no configurado. No se subirán archivos adjuntos.");
-                     await message.reply({ content: '⚠️ No se pudo subir los archivos adjuntos: La carpeta de destino en Google Drive no está configurada en el bot.', ephemeral: true });
-                     return;
+                // Iterar sobre todos los adjuntos del mensaje
+                for (const [attachmentId, attachment] of message.attachments) {
+                    console.log(`Procesando adjunto: ${attachment.name}, URL: ${attachment.url}`);
+
+                    // Llama a uploadFileToDrive con el driveInstance y el ID de la carpeta padre
+                    // Asegúrate que uploadFileToDrive esté disponible en este scope
+                    const uploadedFile = await uploadFileToDrive(driveInstance, attachment, pendingData.pedido, pendingData.targetDriveFolderId); // Asegúrate de que pendingData.targetDriveFolderId es el parámetro correcto
+                    console.log(`Adjunto ${attachment.name} subido a Drive con ID: ${uploadedFile.id}`);
                 }
 
-                console.log(`Iniciando subida de ${message.attachments.size} archivos a Google Drive para el pedido ${pendingData.pedido}...`);
-
-                const driveFolderName = `FacturaA_Pedido_${pendingData.pedido}`.replace(/[\/\\]/g, '_');
-
-                // Usar la función importada y pasar la instancia de drive
-                const folderId = await findOrCreateDriveFolder(driveInstance, config.parentDriveFolderId, driveFolderName); // <-- Pasar driveInstance y config.parentDriveFolderId
-
-                const uploadPromises = Array.from(message.attachments.values()).map(attachment =>
-                    // Usar la función importada y pasar la instancia de drive
-                    uploadFileToDrive(driveInstance, attachment, pendingData.pedido, pendingData.targetDriveFolderId) // <-- Pasar driveInstance
-                );
-
-                const uploadedFiles = await Promise.all(uploadPromises);
-                console.log(`Archivos subidos a Drive: ${uploadedFiles.map(f => f.name).join(', ')}`);
-
-                if (folderId) {
-                     try {
-                        // Usar la instancia de drive pasada
-                        const folderMeta = await driveInstance.files.get({ // <-- Usar driveInstance
-                           fileId: folderId,
-                           fields: 'webViewLink'
-                        });
-                        driveFolderLink = folderMeta.data.webViewLink;
-                     } catch (linkError) {
-                        console.error("Error al obtener el enlace de la carpeta de Drive:", linkError);
-                        driveFolderLink = "Enlace no disponible.";
-                     }
-                }
-
-                let confirmationMessage = `✅ Se ${message.attachments.size === 1 ? 'subió' : 'subieron'} ${message.attachments.size} ${message.attachments.size === 1 ? 'archivo' : 'archivos'} a Google Drive para el Pedido ${pendingData.pedido} (Factura A).`;
-                if (driveFolderLink) {
-                     confirmationMessage += `\nCarpeta: ${driveFolderLink}`;
-                }
-
-                await message.reply({ content: confirmationMessage, ephemeral: true });
-                console.log('Confirmación de subida de archivos enviada.');
+                await message.reply({ content: `✅ Archivos para el pedido **${pendingData.pedido}** subidos a Google Drive correctamente.`, ephemeral: true });
+                console.log(`Archivos del pedido ${pendingData.pedido} subidos a Drive y confirmación enviada.`);
+                await deleteUserState(userId); // Limpiar el estado después de subir los archivos
+                console.log(`Estado pendiente del usuario ${message.author.tag} limpiado para el pedido ${pendingData.pedido}.`);
 
             } catch (error) {
-                console.error('Error durante la subida de archivos a Drive (Factura A):', error);
+                console.error(`Error al subir adjuntos para el pedido ${pendingData.pedido}:`, error);
                 let errorMessage = `❌ Hubo un error al subir los archivos adjuntos para el Pedido ${pendingData.pedido} (Factura A).`;
-                 if (error.response && error.response.data) {
-                      if (error.response.data.error && error.response.data.error.message) {
-                           errorMessage += ` Error de Google API: ${error.response.data.error.message}`;
-                      } else if (error.response.data.error && Array.isArray(error.response.data.error.errors) && error.response.data.error.errors.length > 0 && error.response.data.error.errors[0].message) {
-                           errorMessage += ` Error de Google API: ${error.response.data.error.errors[0].message}`;
-                      } else {
-                           errorMessage += ` Error de Google API: ${error.response.status} ${error.response.statusText}`;
-                      }
-                 } else {
-                      errorMessage += ` Detalles: ${error.message}`;
-                 }
-                 errorMessage += ' Por favor, inténtalo de nuevo o contacta a un administrador.';
-
+                // ... (tu manejo de errores de subida actual)
                 await message.reply({ content: errorMessage, ephemeral: true });
                 console.log('Mensaje de error de subida de archivos enviado.');
             }
@@ -188,6 +151,10 @@ Lista de comandos:
         } else if (message.attachments.size > 0) {
              console.log(`Mensaje con adjuntos recibido de ${message.author.tag}, pero no está en estado de espera. Ignorando adjuntos.`);
         } else {
+            // Lógica para el manual si no hay adjuntos y no hay estado pendiente
+            if (config.manualDriveFileId && config.geminiApiKey) {
+                // ... (Tu código actual para el manual)
+            }
         }
     });
 };
